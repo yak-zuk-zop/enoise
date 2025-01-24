@@ -41,7 +41,7 @@
 %% configuration of pre-defined keys (`s', `e', `rs', `re') should also be
 %% provided.
 
--type noise_option() :: {noise, noise_protocol_option()} %% Required
+-type noise_option() :: {noise, noise_protocol()} %% Required
                       | {e, noise_keypair()} %% Mandatary depending on `noise'
                       | {s, noise_keypair()}
                       | {re, noise_key()}
@@ -49,7 +49,7 @@
                       | {prologue, binary()} %% Optional
                       | {timeout, integer() | infinity}. %% Optional
 
--type noise_protocol_option() :: enoise_protocol:protocol() | string() | binary().
+-type noise_protocol() :: enoise_protocol:protocol() | string() | binary().
 %% Either an instantiated Noise protocol configuration or the name of a Noise
 %% configuration (either as a string or a binary string).
 

@@ -24,3 +24,6 @@ lint:
 
 tests:
 	${REBAR} eunit
+
+test.%: test/%_tests.erl
+	$(REBAR) eunit --module $*_tests

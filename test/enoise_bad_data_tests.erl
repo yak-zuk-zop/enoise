@@ -7,26 +7,20 @@
 
 -spec test() -> _.
 
--spec bad_data_hs_1_test() -> _.
-bad_data_hs_1_test() ->
-    SrvKeyPair = enoise_keypair:new(dh25519),
-    Proto      = enoise_protocol:to_name(xk, dh25519, 'ChaChaPoly', blake2b),
-    Opts       = [{echos, 1}, {reply, self()}],
-    Srv        = enoise_utils:echo_srv_start(4567, Proto, SrvKeyPair, Opts),
+-spec bad_data_hs1_test() -> _.
+bad_data_hs1_test() ->
+    DH     = dh25519,
+    SrvKP  = enoise_keypair:new(DH),
+    Proto  = enoise_protocol:to_name(xk, DH, 'ChaChaPoly', blake2b),
+    Opts   = [{echos, 1}, {reply, self()}],
+    Port   = 4567,
+    SrvPid = echo_srv:start(Port, Proto, SrvKP, Opts),
 
-    bad_client(4567),
-
-    SrvRes = receive
-        {Srv, server_result, Res0} ->
-            Res0
-        after 500 ->
-            timeout
-    end,
-    ?assertMatch({error, {bad_data, _}}, SrvRes),
-    ok.
-
-bad_client(Port) ->
-    {ok, Sock} = gen_tcp:connect("localhost", Port, [binary, {reuseaddr, true}], 100),
+    %% start client
+    {ok, Sock} = gen_tcp:connect("localhost", Port, [binary], 100),
     ok = gen_tcp:send(Sock, <<0:256/unit:8>>),
-    timer:sleep(100),
-    gen_tcp:close(Sock).
+    {ok, SrvRes} = echo_srv:wait_server_result(SrvPid),
+
+    gen_tcp:close(Sock),
+
+    ?assertMatch({error, {bad_data, _}}, SrvRes).

@@ -122,6 +122,8 @@ read_message(HS, [Token | Tokens], Msg0) ->
         {error, _} = Err -> Err
     end.
 
+-spec write_message(state(), [noise_token()], Msg :: binary()) ->
+    {state(), Msg :: binary()}.
 write_message(HS, [], MsgBuf) ->
     {HS, MsgBuf};
 write_message(HS, [Token | Tokens], MsgBuf0) ->
@@ -130,6 +132,8 @@ write_message(HS, [Token | Tokens], MsgBuf0) ->
 
 %%
 
+-spec read_token(state(), noise_token(), binary()) ->
+    {ok, state(), binary()} | {error, term()}.
 read_token(HS = #noise_hs{re = undefined, dh = DH}, Token = e, Data0) ->
     DHLen = enoise_crypto:dhlen(DH),
     case Data0 of
@@ -149,8 +153,8 @@ read_token(HS = #noise_hs{rs = undefined, dh = DH}, Token = s, Data0) ->
             case decrypt_and_hash(HS, Temp) of
                 {ok, HS1, RSPub} ->
                     RS = enoise_keypair:new(DH, RSPub),
-                    {ok, HS1#noise_hs{ rs = RS }, Data1};
-                Err = {error, _} ->
+                    {ok, HS1#noise_hs{rs = RS}, Data1};
+                {error, _} = Err ->
                     Err
             end;
         _ ->
@@ -162,6 +166,8 @@ read_token(HS, Token, Data) ->
 
 %%
 
+-spec write_token(state(), noise_token()) ->
+    {state(), PubKey :: binary()}.
 write_token(HS = #noise_hs{e = undefined}, e) ->
     E = new_key_pair(HS),
     PubE = enoise_keypair:pubkey(E),

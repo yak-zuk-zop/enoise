@@ -131,16 +131,30 @@ role_adapt(responder, Msgs) ->
 
 %% The first character refers to the initiator's static key:
 %%
-%%  * N = No static key for initiator
-%%  * K = Static key for initiator Known to responder
-%%  * X = Static key for initiator Xmitted ("transmitted") to responder
-%%  * I = Static key for initiator Immediately transmitted to responder, despite reduced or absent identity hiding
+%%   * N = No static key for initiator
+%%   * K = Static key for initiator Known to responder
+%%   * X = Static key for initiator Xmitted ("transmitted") to responder
+%%   * I = Static key for initiator Immediately transmitted to responder,
+%%         despite reduced or absent identity hiding
 %%
 %% The second character refers to the responder's static key:
 %%
-%%  * N = No static key for responder
-%%  * K = Static key for responder Known to initiator
-%%  * X = Static key for responder Xmitted ("transmitted") to initiator
+%%   * N = No static key for responder
+%%   * K = Static key for responder Known to initiator
+%%   * X = Static key for responder Xmitted ("transmitted") to initiator
+%%
+%% A pre-message pattern is one of the following sequences of tokens:
+%%   * e
+%%   * s
+%%   * e, s
+%%   * <empty>
+%%
+%% A handshake pattern consists of:
+%%   * A pre-message pattern for the initiator, representing information about
+%%     the initiator's public keys that is known to the responder.
+%%   * A pre-message pattern for the responder, representing information about
+%%     the responder's public keys that is known to the initiator.
+%%   * A sequence of message patterns for the actual handshake messages.
 
 %% patterns se & es differs from https://noiseprotocol.org/noise.html#handshake-patterns
 
@@ -207,15 +221,15 @@ to_name(Pattern, Dh, Cipher, Hash) ->
 
 to_name_pattern(Atom) ->
     [Simple | Rest] = string:lexemes(atom_to_list(Atom), "_"),
-    string:uppercase(Simple) ++ lists:join("+", Rest).
+    string:uppercase(Simple) ++ Rest.
 
 from_name_pattern(String) ->
-    [Init | Mod2] = string:lexemes(String, "+"),
-    {Simple, Mod1} = lists:splitwith(fun(C) -> C >= $A andalso C =< $Z end, Init),
+    SplitFun = fun(C) -> (C >= $A andalso C =< $Z) orelse (C >= $0 andalso C =< $9) end,
+    {Simple, Mod} = lists:splitwith(SplitFun, String),
     list_to_atom(string:lowercase(Simple) ++
-        case Mod1 of
+        case Mod of
             "" -> "";
-            _  -> "_" ++ lists:join([Mod1 | Mod2], "_")
+            _  -> [$_ | Mod]
         end).
 
 to_name_dh(dh25519) -> "25519";

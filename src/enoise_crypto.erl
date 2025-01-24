@@ -62,6 +62,7 @@ hmac(Hash, Key, Data) ->
     Block2 = hmac_format_key(Hash, Key, 16#5C, BLen),
     hash(Hash, <<Block2/binary, Hash1/binary>>).
 
+%% HMAC key derivation function
 -spec hkdf(noise_hash(), binary(), binary()) -> [binary()].
 hkdf(Hash, Key, Data) ->
     TempKey = hmac(Hash, Key, Data),
