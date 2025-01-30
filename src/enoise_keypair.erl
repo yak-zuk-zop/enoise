@@ -34,7 +34,7 @@
 %%-- API ----------------------------------------------------------------------
 
 %% @doc Generate a new keypair of type `Type'.
--spec new(Type :: key_type()) -> keypair().
+-spec new(key_type()) -> keypair().
 new(Type) ->
     {Sec, Pub} = new_key_pair(Type),
     #kp{type = Type, sec = Sec, pub = Pub}.
@@ -46,7 +46,7 @@ new(Type) ->
           Secret :: binary() | undefined,
           Public :: binary() | undefined) -> keypair().
 new(Type, Secret, undefined) ->
-    new(Type, Secret, pubkey_from_secret(Type, Secret));
+    new(Type, Secret, enoise_crypto:pubkey_from_secret(Type, Secret));
 new(Type, Secret, Public) ->
     #kp{type = Type, sec = Secret, pub = Public}.
 
@@ -83,9 +83,3 @@ new_key_pair(dh448) ->
     {SK, PK};
 new_key_pair(Type) ->
     error({unsupported_key_type, Type}).
-
-pubkey_from_secret(dh25519, Secret) ->
-    enacl:curve25519_scalarmult_base(Secret);
-pubkey_from_secret(dh448, Secret) ->
-    {PK, _SK} = crypto:generate_key(ecdh, x448, Secret),
-    PK.
