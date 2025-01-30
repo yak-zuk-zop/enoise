@@ -1,6 +1,8 @@
 {"1.2.0",
-[{<<"enacl">>,{pkg,<<"enacl">>,<<"1.1.1">>},0}]}.
+[{<<"enacl">>,{pkg,<<"enacl">>,<<"1.2.1">>},0}]}.
 [
 {pkg_hash,[
- {<<"enacl">>, <<"F65DC64D9BFF2D8A534CB77AEF14DA5E7A2FA148987D87856F79A4745C9C2627">>}]}
+ {<<"enacl">>, <<"7776480B9B3D42A51D66DBBCBF17FA3D79285B3D2ADCB4D5B5BD0B70F0EF1949">>}]},
+{pkg_hash_ext,[
+ {<<"enacl">>, <<"67BBBEDDD2564DC899A3DCBC3765CD6AD71629134F1E500A50EC071F0F75E552">>}]}
 ].

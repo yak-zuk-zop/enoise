@@ -5,6 +5,9 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
+-spec test() -> _.
+
+-spec bad_data_hs_1_test() -> _.
 bad_data_hs_1_test() ->
     SrvKeyPair = enoise_keypair:new(dh25519),
     Proto      = enoise_protocol:to_name(xk, dh25519, 'ChaChaPoly', blake2b),
@@ -13,15 +16,17 @@ bad_data_hs_1_test() ->
 
     bad_client(4567),
 
-    SrvRes =
-        receive {Srv, server_result, Res0} -> Res0
-        after 500 -> timeout end,
+    SrvRes = receive
+        {Srv, server_result, Res0} ->
+            Res0
+        after 500 ->
+            timeout
+    end,
     ?assertMatch({error, {bad_data, _}}, SrvRes),
     ok.
 
 bad_client(Port) ->
     {ok, Sock} = gen_tcp:connect("localhost", Port, [binary, {reuseaddr, true}], 100),
-    gen_tcp:send(Sock, <<0:256/unit:8>>),
+    ok = gen_tcp:send(Sock, <<0:256/unit:8>>),
     timer:sleep(100),
     gen_tcp:close(Sock).
-

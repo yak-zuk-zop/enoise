@@ -6,9 +6,12 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
+-spec test() -> _.
+
+-spec chachapoly_test() -> _.
 chachapoly_test() ->
-    #{ key := Key, nonce := Nonce, ad := AD, mac := MAC,
-       pt := PlainText, ct := CipherText } = test_utils:chacha_data(),
+    #{key := Key, nonce := Nonce, ad := AD, mac := MAC,
+      pt := PlainText, ct := CipherText} = test_utils:chacha_data(),
     PTLen  = byte_size(PlainText),
     CTLen  = byte_size(CipherText),
     MACLen = byte_size(MAC),
