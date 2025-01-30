@@ -6,22 +6,46 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
+-spec test() -> _.
+
+%%-- fixtures -----------------------------------------------------------------
+
+-spec noise_interactive_test_() -> _.
 noise_interactive_test_() ->
-    %% Test vectors from https://raw.githubusercontent.com/rweather/noise-c/master/tests/vector/noise-c-basic.txt
     {setup,
         fun() -> test_utils:noise_test_vectors() end,
-        fun(_X) -> ok end,
         fun(Tests) ->
-            [ {maps:get(protocol_name, T), fun() -> noise_interactive(T) end}
-              || T <- test_utils:noise_test_filter(Tests) ]
+            [{maps:get(protocol_name, T), fun() -> noise_interactive(T) end} || T <- Tests]
         end
     }.
 
-noise_interactive(V = #{ protocol_name := Name }) ->
+-spec noise_dh25519_test_() -> _.
+noise_dh25519_test_() ->
+    {setup,
+        fun() -> setup_dh25519() end,
+        fun({Tests, SKP, CKP}) ->
+            [{T, fun() -> noise_test(T, SKP, CKP) end} || T <- Tests]
+        end
+    }.
+
+-spec noise_monitor_test_() -> _.
+noise_monitor_test_() ->
+    {setup,
+        fun() -> setup_dh25519() end,
+        fun({Tests, SKP, CKP}) ->
+            [{T, fun() -> noise_monitor_test(T, SKP, CKP) end} || T <- Tests]
+        end
+    }.
+
+%%-- tests --------------------------------------------------------------------
+
+noise_interactive(V = #{protocol_name := Name}) ->
     Protocol = enoise_protocol:from_name(Name),
 
-    FixK = fun(undefined) -> undefined;
-              (Bin) -> test_utils:hex_str_to_bin("0x" ++ binary_to_list(Bin)) end,
+    FixK = fun
+        (undefined) -> undefined;
+        (Bin) -> test_utils:hex_str_to_bin("0x" ++ binary_to_list(Bin))
+    end,
 
     Init = #{ prologue => FixK(maps:get(init_prologue, V, <<>>))
             , e        => FixK(maps:get(init_ephemeral, V, undefined))
@@ -42,11 +66,10 @@ noise_interactive(_Name, Protocol, Init, Resp, Messages, HSHash) ->
     DH = enoise_protocol:dh(Protocol),
     SecK = fun(undefined) -> undefined; (Sec) -> enoise_keypair:new(DH, Sec, undefined) end,
     PubK = fun(undefined) -> undefined; (Pub) -> enoise_keypair:new(DH, Pub) end,
-
     HSInit = fun(#{ e := E, s := S, rs := RS, prologue := PL }, R) ->
-                Opts = [{noise, Protocol}, {s, SecK(S)}, {e, SecK(E)}, {rs, PubK(RS)}, {prologue, PL}],
-                enoise:handshake(Opts, R)
-             end,
+        Opts = [{noise, Protocol}, {s, SecK(S)}, {e, SecK(E)}, {rs, PubK(RS)}, {prologue, PL}],
+        enoise:handshake(Opts, R)
+    end,
     {ok, InitHS} = HSInit(Init, initiator),
     {ok, RespHS} = HSInit(Resp, responder),
 
@@ -63,41 +86,22 @@ noise_interactive([#{ payload := PL0, ciphertext := CT0 } | Msgs], SendHS, RecvH
             ?assertEqual(PL, PL1),
             noise_interactive(Msgs, RecvHS1, SendHS1, HSHash);
         done ->
-            {ok, done, #{ rx := RX1, tx := TX1, hs_hash := HSHash1 }} = enoise:step_handshake(SendHS, done),
-            {ok, done, #{ rx := RX2, tx := TX2, hs_hash := HSHash2 }} = enoise:step_handshake(RecvHS, done),
+            {ok, done, #{rx := RX1, tx := TX1, hs_hash := HSHash1}} = enoise:step_handshake(SendHS, done),
+            {ok, done, #{rx := RX2, tx := TX2, hs_hash := HSHash2}} = enoise:step_handshake(RecvHS, done),
             ?assertEqual(RX1, TX2), ?assertEqual(RX2, TX1),
             ?assertEqual(HSHash, HSHash1), ?assertEqual(HSHash, HSHash2)
     end.
 
-noise_dh25519_test_() ->
-    %% Test vectors from https://raw.githubusercontent.com/rweather/noise-c/master/tests/vector/noise-c-basic.txt
-    {setup,
-        fun() -> setup_dh25519() end,
-        fun(_X) -> ok end,
-        fun({Tests, SKP, CKP}) ->
-            [ {T, fun() -> noise_test(T, SKP, CKP) end} || T <- Tests ]
-        end
-    }.
-
-noise_monitor_test_() ->
-    {setup,
-        fun() -> setup_dh25519() end,
-        fun(_X) -> ok end,
-        fun({Tests, SKP, CKP}) ->
-                [ {T, fun() -> noise_monitor_test(T, SKP, CKP) end} || T <- Tests ]
-        end
-    }.
+%%
 
 setup_dh25519() ->
     %% Generate a static key-pair for Client and Server
     SrvKeyPair = enoise_keypair:new(dh25519),
     CliKeyPair = enoise_keypair:new(dh25519),
 
-    #{ hs_pattern := Ps, hash := Hs, cipher := Cs } = enoise_protocol:supported(),
-    Configurations = [ enoise_protocol:to_name(P, dh25519, C, H)
-                       || P <- Ps, C <- Cs, H <- Hs ],
-    %% Configurations = [ enoise_protocol:to_name(xk, dh25519, 'ChaChaPoly', blake2b) ],
-    {Configurations, SrvKeyPair, CliKeyPair}.
+    #{hs_pattern := Ps, hash := Hs, cipher := Cs} = enoise_protocol:supported(),
+    Protocols = [enoise_protocol:to_name(P, dh25519, C, H) || P <- Ps, C <- Cs, H <- Hs],
+    {Protocols, SrvKeyPair, CliKeyPair}.
 
 noise_test(Conf, SKP, CKP) ->
     #{econn := EConn, echo_srv := EchoSrv} = noise_test_run(Conf, SKP, CKP),
@@ -107,22 +111,67 @@ noise_test(Conf, SKP, CKP) ->
 
 noise_test_run(Conf, SKP, CKP) ->
     {Pid, MRef} = spawn_monitor_proxy(
-                    fun() -> noise_test_run_(Conf, SKP, CKP) end),
+        fun() -> noise_test_run_(Conf, SKP, CKP) end
+    ),
     receive
         {Pid, #{} = Info} ->
             Info#{proxy => Pid, proxy_mref => MRef}
     after 5000 ->
-            erlang:error(timeout)
+        erlang:error(timeout)
     end.
+
+noise_test_run_(Conf, SKP, CKP) ->
+    Protocol = enoise_protocol:from_name(Conf),
+    Port     = 4556,
+
+    SrvOpts = [{echos, 2}, {cpub, CKP}],
+    EchoSrv = enoise_utils:echo_srv_start(Port, Protocol, SKP, SrvOpts),
+
+    {ok, TcpSock} = gen_tcp:connect("localhost", Port, [{active, once}, binary, {reuseaddr, true}], 100),
+
+    Opts = [{noise, Protocol}, {s, CKP}] ++ [{rs, SKP} || enoise_utils:need_rs(initiator, Conf)],
+    {ok, EConn, _} = enoise:connect(TcpSock, Opts),
+
+    ok = enoise:send(EConn, <<"Hello World!">>),
+    receive
+        {reply, _, <<"Hello World!">>} ->
+            ok
+    after 100 ->
+        error(timeout)
+    end,
+
+    ok = enoise:set_active(EConn, once),
+    ok = enoise:send(EConn, <<"Goodbye!">>),
+    receive
+        {reply, _, <<"Goodbye!">>} ->
+            ok
+    after 100 ->
+        error(timeout)
+    end,
+    #{econn => EConn, tcp_sock => TcpSock, echo_srv => EchoSrv}.
+
+noise_monitor_test(Conf, SKP, CKP) ->
+    #{ econn := {enoise, EConnPid}
+     , proxy := Proxy
+     , tcp_sock := _TcpSock} = noise_test_run(Conf, SKP, CKP),
+    try
+        proxy_exec(Proxy, fun() -> exit(normal) end)
+    catch
+        error:normal ->
+            receive after 100 ->
+                false = is_process_alive(EConnPid)
+            end
+    end.
+
+%%
 
 spawn_monitor_proxy(F) ->
     Me = self(),
     spawn_monitor(fun() ->
-                          MRef = erlang:monitor(process, Me),
-                          Res = F(),
-                          Me ! {self(), Res},
-                          proxy_loop(Me, MRef)
-                  end).
+        MRef = erlang:monitor(process, Me),
+        Me ! {self(), F()},
+        proxy_loop(Me, MRef)
+    end).
 
 proxy_loop(Parent, MRef) ->
     receive
@@ -142,46 +191,7 @@ proxy_exec(P, F) when is_function(F, 0) ->
         {'DOWN', R, _, _, Reason} ->
             erlang:error(Reason)
     after 5000 ->
-            erlang:error(timeout)
-    end.
-
-noise_test_run_(Conf, SKP, CKP) ->
-    Protocol = enoise_protocol:from_name(Conf),
-    Port     = 4556,
-
-    SrvOpts = [{echos, 2}, {cpub, CKP}],
-    EchoSrv = enoise_utils:echo_srv_start(Port, Protocol, SKP, SrvOpts),
-
-    {ok, TcpSock} = gen_tcp:connect("localhost", Port, [{active, once}, binary, {reuseaddr, true}], 100),
-
-    Opts = [{noise, Protocol}, {s, CKP}] ++ [{rs, SKP} || enoise_utils:need_rs(initiator, Conf) ],
-    {ok, EConn, _} = enoise:connect(TcpSock, Opts),
-
-    ok = enoise:send(EConn, <<"Hello World!">>),
-    receive
-        {noise, _, <<"Hello World!">>} -> ok
-    after 100 -> error(timeout) end,
-
-    enoise:set_active(EConn, once),
-
-    ok = enoise:send(EConn, <<"Goodbye!">>),
-    receive
-        {noise, _, <<"Goodbye!">>} -> ok
-    after 100 -> error(timeout) end,
-    #{ econn => EConn
-     , tcp_sock => TcpSock
-     , echo_srv => EchoSrv }.
-
-noise_monitor_test(Conf, SKP, CKP) ->
-    #{ econn := {enoise, EConnPid}
-     , proxy := Proxy
-     , tcp_sock := _TcpSock } = noise_test_run(Conf, SKP, CKP),
-    try proxy_exec(Proxy, fun() -> exit(normal) end)
-    catch
-        error:normal ->
-            receive after 100 ->
-                            false = is_process_alive(EConnPid)
-                    end
+        erlang:error(timeout)
     end.
 
 %% Talks to local echo-server (noise-c)
@@ -202,7 +212,7 @@ noise_monitor_test(Conf, SKP, CKP) ->
 %%     {ok, EConn} = enoise:connect(TcpSock, Opts),
 %%     ok = enoise:send(EConn, <<"ok\n">>),
 %%     receive
-%%         {noise, EConn, <<"ok\n">>} -> ok
+%%         {reply, EConn, <<"ok\n">>} -> ok
 %%     after 1000 -> error(timeout) end,
 %%     %% {ok, <<"ok\n">>} = enoise:recv(EConn, 3, 1000),
 %%     enoise:close(EConn).
