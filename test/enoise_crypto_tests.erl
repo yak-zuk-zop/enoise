@@ -14,8 +14,8 @@ curve25519_test() ->
     KeyPair1 = enoise_keypair:new(DH),
     KeyPair2 = enoise_keypair:new(DH),
 
-    SharedA = enoise_crypto:dh(DH, KeyPair1, KeyPair2),
-    SharedB = enoise_crypto:dh(DH, KeyPair2, KeyPair1),
+    SharedA = enoise_crypto:dh(KeyPair1, KeyPair2),
+    SharedB = enoise_crypto:dh(KeyPair2, KeyPair1),
     ?assertMatch(SharedA, SharedB),
 
     #{a_pub := APub, a_priv := APriv,
@@ -23,8 +23,8 @@ curve25519_test() ->
 
     KeyPair3 = enoise_keypair:new(DH, APriv, APub),
     KeyPair4 = enoise_keypair:new(DH, BPriv, BPub),
-    ?assertMatch(Shared, enoise_crypto:dh(DH, KeyPair3, KeyPair4)),
-    ?assertMatch(Shared, enoise_crypto:dh(DH, KeyPair4, KeyPair3)),
+    ?assertMatch(Shared, enoise_crypto:dh(KeyPair3, KeyPair4)),
+    ?assertMatch(Shared, enoise_crypto:dh(KeyPair4, KeyPair3)),
 
     ok.
 

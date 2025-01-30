@@ -13,7 +13,8 @@
     new/2,
     new/3,
     pubkey/1,
-    seckey/1
+    seckey/1,
+    keytype/1
 ]).
 
 -type key_type() :: enoise_crypto:noise_dh().
@@ -57,7 +58,11 @@ new(Type, Public) ->
 
 %%
 
--spec pubkey(KeyPair :: keypair()) -> binary().
+-spec keytype(keypair()) -> key_type().
+keytype(#kp{type = T}) ->
+    T.
+
+-spec pubkey(keypair()) -> binary().
 pubkey(#kp{pub = P}) ->
     P.
 

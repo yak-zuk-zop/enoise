@@ -11,7 +11,7 @@
 %% API
 -export([
     decrypt/5,
-    dh/3,
+    dh/2,
     dhlen/1,
     encrypt/5,
     hash/2,
@@ -41,18 +41,23 @@
 %%-- API ----------------------------------------------------------------------
 
 %% @doc Perform a Diffie-Hellman calculation with the secret key from `Key1'
-%% and the public key from `Key2' with algorithm `Algo'.
--spec dh(noise_dh(), keypair(), keypair()) -> binary().
-dh(dh25519, Key1, Key2) ->
+%% and the public key from `Key2' with algorithm `noise_dh()'.
+%% DH(SK1, PK2) == DH(SK2, PK1)
+%% @end
+-spec dh(keypair(), keypair()) -> binary().
+dh(Key1, Key2) ->
     SecKey1 = enoise_keypair:seckey(Key1),
     PubKey2 = enoise_keypair:pubkey(Key2),
-    enacl:curve25519_scalarmult(SecKey1, PubKey2);
-dh(dh448, Key1, Key2) ->
-    SecKey1 = enoise_keypair:seckey(Key1),
-    PubKey2 = enoise_keypair:pubkey(Key2),
-    crypto:compute_key(ecdh, PubKey2, SecKey1, x448);
-dh(Type, _Key1, _Key2) ->
-    error({unsupported_diffie_hellman, Type}).
+    case {enoise_keypair:keytype(Key1), enoise_keypair:keytype(Key2)} of
+        {T, T} when T == dh25519 ->
+            enacl:curve25519_scalarmult(SecKey1, PubKey2);
+        {T, T} when T == dh448 ->
+            crypto:compute_key(ecdh, PubKey2, SecKey1, x448);
+        {T, T} ->
+            error({unsupported_diffie_hellman, T});
+        Wrong ->
+            error({badarg, Wrong})
+    end.
 
 -spec hmac(noise_hash(), binary(), binary()) -> binary().
 hmac(Hash, Key, Data) ->
