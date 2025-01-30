@@ -28,7 +28,7 @@
 -type noise_dh() :: enoise_crypto:noise_dh().
 -type noise_cipher() :: enoise_crypto:noise_cipher().
 -type noise_hash() :: enoise_crypto:noise_hash().
--type noise_pattern() :: nn | kn | nk | kk | nx | kx | xn | in | xk | ik | xx | ix.
+-type noise_pattern() :: nn | kn | nk | nk1 | kk | kk1 | nx | nx1 | kx | kx1 | xn | in | xk | ik | xx | xx1 | ix | ix1.
 -type noise_token() :: s | e | ee | ss | es | se. % TODO: add psk
 -type noise_msg()     :: {in | out, [noise_token()]}.
 
@@ -165,12 +165,20 @@ protocol(kn) ->
     {[{out, [s]}], [{out, [e]}, {in, [e, ee, se]}]};
 protocol(nk) ->
     {[{in, [s]}], [{out, [e, es]}, {in, [e, ee]}]};
+protocol(nk1) ->
+    {[{in, [s]}], [{out, [e]}, {in, [e, ee, es]}]};
 protocol(kk) ->
     {[{out, [s]}, {in, [s]}], [{out, [e, es, ss]}, {in, [e, ee, se]}]};
+protocol(kk1) ->
+    {[{out, [s]}, {in, [s]}], [{out, [e]}, {in, [e, ee, se, es]}]};
 protocol(nx) ->
     {[], [{out, [e]}, {in, [e, ee, s, es]}]};
+protocol(nx1) ->
+    {[], [{out, [e]}, {in, [e, ee, s]}, {out, [es]}]};
 protocol(kx) ->
     {[{out, [s]}], [{out, [e]}, {in, [e, ee, se, s, es]}]};
+protocol(kx1) ->
+    {[{out, [s]}], [{out, [e]}, {in, [e, ee, se, s]}, {out, [es]}]};
 protocol(xn) ->
     {[], [{out, [e]}, {in, [e, ee]}, {out, [s, se]}]};
 protocol(in) ->
@@ -181,8 +189,12 @@ protocol(ik) ->
     {[{in, [s]}], [{out, [e, es, s, ss]}, {in, [e, ee, se]}]};
 protocol(xx) ->
     {[], [{out, [e]}, {in, [e, ee, s, es]}, {out, [s, se]}]};
+protocol(xx1) ->
+    {[], [{out, [e]}, {in, [e, ee, s]}, {out, [es, s, se]}]};
 protocol(ix) ->
-    {[], [{out, [e, s]}, {in, [e, ee, se, s, es]}]}.
+    {[], [{out, [e, s]}, {in, [e, ee, se, s, es]}]};
+protocol(ix1) ->
+    {[], [{out, [e, s]}, {in, [e, ee, se, s]}, {out, [es]}]}.
 
 %% TODO: One-way handshake patterns
 %protocol(n) ->
@@ -205,7 +217,7 @@ is_supported(#noise_protocol{hs_pattern = Pattern, dh = Dh, cipher = Cipher, has
 -spec supported() -> map().
 supported() ->
     #{
-        hs_pattern => [nn, kn, nk, kk, nx, kx, xn, in, xk, ik, xx, ix],
+        hs_pattern => [nn, kn, nk, nk1, kk, kk1, nx, nx1, kx, kx1, xn, in, xk, ik, xx, xx1, ix, ix1],
         hash       => [blake2b, blake2s, sha256, sha512],
         cipher     => ['ChaChaPoly', 'AESGCM'],
         dh         => [dh25519, dh448]
