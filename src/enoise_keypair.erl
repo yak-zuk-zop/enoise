@@ -45,7 +45,7 @@ new(Type) ->
 -spec new(Type :: key_type(),
           Secret :: binary() | undefined,
           Public :: binary() | undefined) -> keypair().
-new(Type, Secret, undefined) ->
+new(Type, Secret, undefined) when Secret =/= undefined ->
     new(Type, Secret, enoise_crypto:pubkey_from_secret(Type, Secret));
 new(Type, Secret, Public) ->
     #kp{type = Type, sec = Secret, pub = Public}.

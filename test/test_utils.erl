@@ -21,9 +21,10 @@
     noise_test_vectors/1,
     protocol_filter_all/1,
     protocol_filter_interactive/1,
-    protocol_filter_noninteractive/1,
+    protocol_filter_oneway/1,
 
-    init_hs_test/2
+    init_hs_test/2,
+    maybe_new_keypare/2
 ]).
 
 -spec test() -> _.
@@ -47,10 +48,10 @@ protocol_filter_all(_) ->
 
 -spec protocol_filter_interactive(protocol()) -> boolean().
 protocol_filter_interactive(Protocol) ->
-    not protocol_filter_noninteractive(Protocol).
+    not protocol_filter_oneway(Protocol).
 
--spec protocol_filter_noninteractive(protocol()) -> boolean().
-protocol_filter_noninteractive(Protocol) ->
+-spec protocol_filter_oneway(protocol()) -> boolean().
+protocol_filter_oneway(Protocol) ->
     Pattern = enoise_protocol:pattern(Protocol),
     Pattern == n orelse Pattern == k orelse Pattern == x.
 
@@ -77,6 +78,17 @@ init_hs_test(V = #{protocol_name := Name}, TestFun) ->
     HandshakeHash = maps:get(handshake_hash, V),
 
     TestFun(Protocol, Init, Resp, Messages, FixK(HandshakeHash)).
+
+-spec maybe_new_keypare(DH, KnownKey) -> Result when
+    DH :: enoise_crypto:noise_dh(),
+    KnownKey :: {secret | public, binary() | undefined},
+    Result :: enoise_keypair:keypair().
+maybe_new_keypare(_, {_, undefined}) ->
+    undefined;
+maybe_new_keypare(DH, {secret, Sec}) ->
+    enoise_keypair:new(DH, Sec, undefined);
+maybe_new_keypare(DH, {public, Pub}) ->
+    enoise_keypair:new(DH, undefined, Pub).
 
 %% -- test data ---------------------------------------------------------------
 

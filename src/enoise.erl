@@ -237,14 +237,10 @@ hs_send_msg(CS = #{send_msg := Send, state := S}, Data) ->
 %% -- gen_tcp specific functions ----------------------------------------------
 
 tcp_handshake(TcpSock, Role, Options) ->
-    case check_gen_tcp(TcpSock) of
+    case check_socket(TcpSock) of
         ok ->
-            case inet:getopts(TcpSock, [active]) of
-                {ok, [{active, Active}]} ->
-                    do_tcp_handshake(Options, Role, TcpSock, Active);
-                {error, _} = Err ->
-                    Err
-            end;
+            {ok, [{active, Active}]} = inet:getopts(TcpSock, [active]),
+            do_tcp_handshake(Options, Role, TcpSock, Active);
         {error, _} = Err ->
             Err
     end.
@@ -282,8 +278,8 @@ create_hstate(Options, Role) ->
 
     enoise_hs_state:init(NoiseProtocol, Role, Prologue, {S, E, RS, RE}).
 
--spec check_gen_tcp(gen_tcp:socket()) -> result(ok).
-check_gen_tcp(TcpSock) ->
+-spec check_socket(gen_tcp:socket()) -> result(ok).
+check_socket(TcpSock) ->
     case inet:getopts(TcpSock, [mode, packet, active, header, packet_size]) of
         {ok, TcpOpts} ->
             Packet = proplists:get_value(packet, TcpOpts, 0),
@@ -299,7 +295,7 @@ check_gen_tcp(TcpSock) ->
                 false ->
                     {error, {invalid_tcp_options, TcpOpts}}
             end;
-        Err = {error, _} ->
+        {error, _} = Err ->
             Err
     end.
 

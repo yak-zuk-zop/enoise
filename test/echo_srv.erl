@@ -8,12 +8,13 @@
     start/4,
     stop/1,
     need_rs/2,
-    wait_server_result/1
+    wait_server_result/1,
+    expected_reply/1
 ]).
 
 -type server_opts() :: [
     {echos, pos_integer()} |
-    {reply, pid()} |
+    {recipient, pid()} |
     {mode,  active | passive} |
     {cpub, enoise_keypair:keypair()}
 ].
@@ -39,9 +40,17 @@ need_rs(Role, Protocol) ->
 
 -spec wait_server_result(pid()) -> {ok, any()} | {error, timeout}.
 wait_server_result(SrvPid) ->
-    receive {SrvPid, server_result, Res} ->
+    receive {server_result, SrvPid, Res} ->
         {ok, Res}
     after 500 ->
+        {error, timeout}
+    end.
+
+-spec expected_reply(enoise_connection:t()) -> {ok, any()} | {error, timeout}.
+expected_reply(EConn) ->
+    receive {reply, EConn, Msg} ->
+        {ok, Msg}
+    after 100 ->
         {error, timeout}
     end.
 
@@ -74,8 +83,8 @@ echo_srv(Port, Protocol, SrvKP, SrvOpts) ->
 echo_srv_loop(EConn, SrvOpts) ->
     Echos = proplists:get_value(echos, SrvOpts, 2),
     try
-        RecvFun = build_recv_fun(EConn, SrvOpts),
-        [ok = enoise:send(EConn, RecvFun()) || _ <- lists:seq(1, Echos)],
+        RecvFun = build_recv_fun(SrvOpts),
+        [ok = enoise:send(EConn, RecvFun(EConn)) || _ <- lists:seq(1, Echos)],
         ok
     catch _:R ->
         {error, R}
@@ -83,21 +92,22 @@ echo_srv_loop(EConn, SrvOpts) ->
 
 -spec srv_reply(ok | {error, term()}, server_opts()) -> ok.
 srv_reply(Reply, SrvOpts) ->
-    case proplists:get_value(reply, SrvOpts, undefined) of
+    case proplists:get_value(recipient, SrvOpts, undefined) of
         undefined -> ok;
-        Pid       -> Pid ! {self(), server_result, Reply}, ok
+        Pid       -> Pid ! {server_result, self(), Reply}, ok
     end.
 
-build_recv_fun(EConn, SrvOpts) ->
+-spec build_recv_fun(server_opts()) -> fun((enoise_connection:t()) -> binary()).
+build_recv_fun(SrvOpts) ->
     case proplists:get_value(mode, SrvOpts, passive) of
         passive ->
-            fun() ->
-                receive {reply, EConn, Data} -> Data
-                after 200 -> error(timeout) end
+            fun(EConn) ->
+                {ok, Data} = expected_reply(EConn),
+                Data
             end;
         active  ->
             error({not_supported, active})
-            %fun() ->
+            %fun(EConn) ->
             %    {ok, Data} = enoise:recv(EConn, 0, 200),
             %    Data
             %end

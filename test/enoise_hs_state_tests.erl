@@ -26,18 +26,17 @@ noise_hs_test_() ->
 
 noise_test(Protocol, Init, Resp, Messages, HSHash) ->
     DH = enoise_protocol:dh(Protocol),
-    SecK = fun(undefined) -> undefined; (Sec) -> enoise_keypair:new(DH, Sec, undefined) end,
-    PubK = fun(undefined) -> undefined; (Pub) -> enoise_keypair:new(DH, Pub) end,
+    NewK = fun(Key) -> test_utils:maybe_new_keypare(DH, Key) end,
     HSInit = fun(#{e := E, s := S, rs := RS, prologue := PL}, R) ->
-        Keys = {SecK(S), SecK(E), PubK(RS), undefined},
+        Keys = {NewK({secret, S}), NewK({secret, E}), NewK({public, RS}), undefined},
         enoise_hs_state:init(Protocol, R, PL, Keys)
     end,
     InitHS = HSInit(Init, initiator),
     RespHS = HSInit(Resp, responder),
 
-    noise_test(Messages, InitHS, RespHS, HSHash),
+    noise_test(Messages, InitHS, RespHS, HSHash).
 
-    ok.
+%%-- internals ----------------------------------------------------------------
 
 noise_test([M = #{payload := PL0, ciphertext := CT0} | Msgs], SendHS, RecvHS, HSHash) ->
     case {enoise_hs_state:next_message(SendHS), enoise_hs_state:next_message(RecvHS)} of
