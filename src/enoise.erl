@@ -189,6 +189,25 @@ set_active(Conn, Mode) ->
 
 %%-- internals ----------------------------------------------------------------
 
+-spec create_hstate(noise_options(), enoise_hs_state:noise_role()) -> handshake_state().
+create_hstate(Options, Role) ->
+    Prologue = proplists:get_value(prologue, Options, <<>>),
+    Proto    = proplists:get_value(noise, Options),
+
+    Protocol = case Proto of
+        X when is_binary(X); is_list(X) ->
+            enoise_protocol:from_name(X);
+        _ ->
+            Proto
+    end,
+
+    S  = proplists:get_value(s, Options, undefined),
+    E  = proplists:get_value(e, Options, undefined),
+    RS = proplists:get_value(rs, Options, undefined),
+    RE = proplists:get_value(re, Options, undefined),
+
+    enoise_hs_state:init(Protocol, Role, Prologue, {S, E, RS, RE}).
+
 -spec do_handshake(handshake_state(), noise_com_state(), timeout()) ->
     result({ok, noise_split_state(), noise_com_state()}).
 do_handshake(HState, ComState, Timeout) ->
@@ -258,25 +277,6 @@ do_tcp_handshake(Options, Role, TcpSock, Active) ->
         {error, _} = Err ->
             Err
     end.
-
--spec create_hstate(noise_options(), enoise_hs_state:noise_role()) -> handshake_state().
-create_hstate(Options, Role) ->
-    Prologue       = proplists:get_value(prologue, Options, <<>>),
-    NoiseProtocol0 = proplists:get_value(noise, Options),
-
-    NoiseProtocol = case NoiseProtocol0 of
-        X when is_binary(X); is_list(X) ->
-            enoise_protocol:from_name(X);
-        _ ->
-            NoiseProtocol0
-    end,
-
-    S  = proplists:get_value(s, Options, undefined),
-    E  = proplists:get_value(e, Options, undefined),
-    RS = proplists:get_value(rs, Options, undefined),
-    RE = proplists:get_value(re, Options, undefined),
-
-    enoise_hs_state:init(NoiseProtocol, Role, Prologue, {S, E, RS, RE}).
 
 -spec check_socket(gen_tcp:socket()) -> result(ok).
 check_socket(TcpSock) ->

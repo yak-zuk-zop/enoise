@@ -56,11 +56,9 @@
 
 %%-- API ----------------------------------------------------------------------
 
--spec init(Protocol :: string() | enoise_protocol:protocol(),
+-spec init(Protocol :: enoise_protocol:protocol(),
            Role :: noise_role(), Prologue :: binary(),
            Keys :: tuple()) -> state().
-init(ProtocolName, Role, Prologue, Keys) when is_list(ProtocolName) ->
-    init(enoise_protocol:from_name(ProtocolName), Role, Prologue, Keys);
 init(Protocol, Role, Prologue, {S, E, RS, RE}) ->
     SS0 = enoise_sym_state:init(Protocol),
     SS1 = enoise_sym_state:mix_hash(SS0, Prologue),
