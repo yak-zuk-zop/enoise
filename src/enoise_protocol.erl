@@ -28,7 +28,9 @@
 -type noise_dh() :: enoise_crypto:noise_dh().
 -type noise_cipher() :: enoise_crypto:noise_cipher().
 -type noise_hash() :: enoise_crypto:noise_hash().
--type noise_pattern() :: nn | kn | nk | nk1 | kk | kk1 | nx | nx1 | kx | kx1 | xn | in | xk | ik | xx | xx1 | ix | ix1.
+-type noise_pattern() ::
+    nn | kn | nk | nk1 | kk | kk1 | nx | nx1 | kx | kx1 |
+    xn | in | xk | ik | xx | xx1 | ix | ix1 | n | k | x.
 -type noise_token() :: s | e | ee | ss | es | se. % TODO: add psk
 -type noise_msg()     :: {in | out, [noise_token()]}.
 
@@ -159,6 +161,8 @@ role_adapt(responder, Msgs) ->
 %% patterns se & es differs from https://noiseprotocol.org/noise.html#handshake-patterns
 
 -spec protocol(noise_pattern()) -> {list(PreMsg :: noise_msg()), list(noise_msg())}.
+
+%% Interactive handshake patterns
 protocol(nn) ->
     {[], [{out, [e]}, {in, [e, ee]}]};
 protocol(kn) ->
@@ -194,15 +198,15 @@ protocol(xx1) ->
 protocol(ix) ->
     {[], [{out, [e, s]}, {in, [e, ee, se, s, es]}]};
 protocol(ix1) ->
-    {[], [{out, [e, s]}, {in, [e, ee, se, s]}, {out, [es]}]}.
+    {[], [{out, [e, s]}, {in, [e, ee, se, s]}, {out, [es]}]};
 
-%% TODO: One-way handshake patterns
-%protocol(n) ->
-%    {[{out, [s]}], [{in, [e, se]}]};
-%protocol(k) ->
-%    {[{in, [s]}, {out, [s]}], [{in, [e, se, ss]}]};
-%protocol(x) ->
-%    {[{out, [s]}], [{in, [e, se, s, ss]}]}.
+%% One-way handshake patterns
+protocol(n) ->
+    {[{out, [s]}], [{in, [e, se]}]};
+protocol(k) ->
+    {[{in, [s]}, {out, [s]}], [{in, [e, se, ss]}]};
+protocol(x) ->
+    {[{out, [s]}], [{in, [e, se, s, ss]}]}.
 
 %%
 
@@ -217,7 +221,7 @@ is_supported(#noise_protocol{hs_pattern = Pattern, dh = Dh, cipher = Cipher, has
 -spec supported() -> map().
 supported() ->
     #{
-        hs_pattern => [nn, kn, nk, nk1, kk, kk1, nx, nx1, kx, kx1, xn, in, xk, ik, xx, xx1, ix, ix1],
+        hs_pattern => [nn, kn, nk, nk1, kk, kk1, nx, nx1, kx, kx1, xn, in, xk, ik, xx, xx1, ix, ix1, n, k, x],
         hash       => [blake2b, blake2s, sha256, sha512],
         cipher     => ['ChaChaPoly', 'AESGCM'],
         dh         => [dh25519, dh448]
