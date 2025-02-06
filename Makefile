@@ -25,5 +25,5 @@ lint:
 tests:
 	${REBAR} eunit
 
-test.%: test/%_tests.erl
-	$(REBAR) eunit --module $*_tests
+test.%: test/enoise_%_tests.erl
+	$(REBAR) eunit --module enoise_$*_tests

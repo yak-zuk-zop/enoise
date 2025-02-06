@@ -1,8 +1,4 @@
-%%%-------------------------------------------------------------------
-%%% @copyright (C) 2018, Aeternity Anstalt
-%%%-------------------------------------------------------------------
-
--module(enoise_tests).
+-module(enoise_handshake_tests).
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -58,29 +54,44 @@ setup_dh(DH) ->
 -spec noise_monitor_test() -> _.
 noise_monitor_test() ->
     DH    = dh25519,
-    Proto = enoise_protocol:to_name(xk, DH, 'ChaChaPoly', blake2b),
+    Name  = enoise_protocol:to_name(xk, DH, 'ChaChaPoly', blake2b),
     SrvKP = enoise_keypair:new(DH),
     CliKP = enoise_keypair:new(DH),
+    Proto = enoise_protocol:from_name(Name),
+
+    Port    = 4556,
+    SrvOpts = [{echos, 3}, {cpub, CliKP}],
+    EchoSrv = echo_srv:start(Port, Proto, SrvKP, SrvOpts),
+
+    ClientFun = fun() ->
+        {ok, TcpSock} = gen_tcp:connect("localhost", Port, [{active, true}, binary], 100),
+        Opts = build_enoise_options(Proto, initiator, CliKP, SrvKP),
+        {ok, EConn, _} = enoise:connect(TcpSock, Opts),
+
+        Msg1 = <<"Hello World!">>,
+        ok = enoise:send(EConn, Msg1),
+        ?assertEqual({ok, Msg1}, echo_srv:expected_reply(EConn)),
+
+        {econn, EConn}
+    end,
 
     Proxy = proxy_srv:start(),
-
-    TestFun = fun() -> noise_test_run(Proto, SrvKP, CliKP) end,
-    {ok, #{econn := EConn}} = proxy_srv:exec(Proxy, TestFun),
-
+    {ok, {econn, EConn}} = proxy_srv:exec(Proxy, ClientFun),
     {error, {'DOWN', normal}} = proxy_srv:exec(Proxy, fun() -> exit(normal) end),
 
-    timer:sleep(20),
+    ?assertNot(enoise_connection:is_alive(EConn)),
 
-    ?assertNot(enoise_connection:is_alive(EConn)).
+    echo_srv:stop(EchoSrv),
+    ok.
 
 -spec bad_handshake_test() -> _.
 bad_handshake_test() ->
     DH     = dh25519,
     SrvKP  = enoise_keypair:new(DH),
-    Proto  = enoise_protocol:to_name(xk, DH, 'ChaChaPoly', blake2b),
+    Name   = enoise_protocol:to_name(xk, DH, 'ChaChaPoly', blake2b),
     Opts   = [{echos, 1}, {recipient, self()}],
     Port   = 4567,
-    SrvPid = echo_srv:start(Port, Proto, SrvKP, Opts),
+    SrvPid = echo_srv:start(Port, Name, SrvKP, Opts),
 
     %% start client
     {ok, Sock} = gen_tcp:connect("localhost", Port, [binary], 100),
@@ -134,27 +145,17 @@ noise_interactive([#{payload := PL0, ciphertext := CT0} | Msgs], SendHS, RecvHS,
 
 %%
 
-noise_test_simple(Proto, SrvKP, CliKP) ->
-    #{econn := EConn, echo_srv := EchoSrv} = noise_test_run(Proto, SrvKP, CliKP),
-    enoise:close(EConn),
-    echo_srv:stop(EchoSrv),
-    ok.
-
-%%-- internals ----------------------------------------------------------------
-
--spec noise_test_run(binary(), enoise_keypair:keypair(), enoise_keypair:keypair()) -> Result when
-    Result :: #{econn := enoise_connection:t(), echo_srv := pid()}.
-noise_test_run(Proto, SrvKP, CliKP) ->
-    Protocol = enoise_protocol:from_name(Proto),
-    TcpOpts  = [{active, true}, binary],
-    Port     = 4556,
-
+-spec noise_test_simple(binary(), enoise_keypair:keypair(), enoise_keypair:keypair()) -> ok.
+noise_test_simple(Name, SrvKP, CliKP) ->
+    Proto   = enoise_protocol:from_name(Name),
+    TcpOpts = [{active, true}, binary],
+    Port    = 4556,
     SrvOpts = [{echos, 2}, {cpub, CliKP}],
-    EchoSrv = echo_srv:start(Port, Protocol, SrvKP, SrvOpts),
+    EchoSrv = echo_srv:start(Port, Proto, SrvKP, SrvOpts),
 
     {ok, TcpSock} = gen_tcp:connect("localhost", Port, TcpOpts, 100),
 
-    Opts = [{noise, Protocol}, {s, CliKP} | [{rs, SrvKP} || echo_srv:need_rs(initiator, Protocol)]],
+    Opts = build_enoise_options(Proto, initiator, CliKP, SrvKP),
     {ok, EConn, _} = enoise:connect(TcpSock, Opts),
 
     Msg1 = <<"Hello World!">>,
@@ -164,60 +165,12 @@ noise_test_run(Proto, SrvKP, CliKP) ->
     Msg2 = <<"Goodbye!">>,
     ok = enoise:send(EConn, Msg2),
     ?assertEqual({ok, Msg2}, echo_srv:expected_reply(EConn)),
-    #{econn => EConn, echo_srv => EchoSrv}.
 
-%% Talks to local echo-server (noise-c)
-%% client_test() ->
-%%     TestProtocol = enoise_protocol:from_name("Noise_XK_25519_ChaChaPoly_BLAKE2b"),
-%%     CliPrivKey = <<64,168,119,119,151,194,94,141,86,245,144,220,78,53,243,231,
-%%           168,216,66,199,49,148,202,117,98,40,61,109,170,37,133,122>>,
-%%     CliPupKey = <<115,39,86,77,44,85,192,176,202,11,4,6,194,144,127,123,
-%%          34,67,62,180,190,232,251,5,216,168,192,190,134,65,13,64>>,
-%%     SrvPubKey = <<112,91,141,253,183,66,217,102,211,40,13,249,238,51,77,114,
-%%          163,159,32,1,162,219,76,106,89,164,34,71,149,2,103,59>>,
+    enoise:close(EConn),
+    echo_srv:stop(EchoSrv),
+    ok.
 
-%%     TcpOpts = [{active, once}, binary],
-%%     {ok, TcpSock} = gen_tcp:connect("localhost", 7890, TcpOpts, 1000),
-%%     gen_tcp:send(TcpSock, <<0,8,0,0,3>>),
+%%-- internals ----------------------------------------------------------------
 
-%%     Opts = [ {noise, TestProtocol}
-%%            , {s, enoise_keypair:new(dh25519, CliPrivKey, CliPupKey)}
-%%            , {rs, enoise_keypair:new(dh25519, SrvPubKey)}
-%%            , {prologue, <<0,8,0,0,3>>}],
-
-%%     {ok, EConn} = enoise:connect(TcpSock, Opts),
-%%     Msg = <<"ok\n">>,
-%%     ok = enoise:send(EConn, Msg),
-%%     {ok, Msg} = echo_srv:expected_reply(EConn),
-%%     %% {ok, Msg} = enoise:recv(EConn, 3, 1000),
-%%     enoise:close(EConn).
-
-
-%% Expects a call-in from a local echo-client (noise-c)
-%% server_test_() ->
-%%     {timeout, 20, fun() ->
-%%     TestProtocol = enoise_protocol:from_name("Noise_XK_25519_ChaChaPoly_BLAKE2b"),
-
-%%     SrvPrivKey = <<200,81,196,192,228,196,182,200,181,83,169,255,242,54,99,113,
-%%          8,49,129,92,225,220,99,50,93,96,253,250,116,196,137,103>>,
-%%     SrvPubKey = <<112,91,141,253,183,66,217,102,211,40,13,249,238,51,77,114,
-%%          163,159,32,1,162,219,76,106,89,164,34,71,149,2,103,59>>,
-
-%%     Opts = [ {noise, TestProtocol}
-%%            , {s, enoise_keypair:new(dh25519, SrvPrivKey, SrvPubKey)}
-%%            , {prologue, <<0,8,0,0,3>>}],
-
-%%     {ok, LSock} = gen_tcp:listen(7891, [{reuseaddr, true}, binary]),
-
-%%     {ok, TcpSock} = gen_tcp:accept(LSock, 10000),
-
-%%     receive {tcp, TcpSock, <<0,8,0,0,3>>} -> ok
-%%     after 1000 -> error(timeout) end,
-
-%%     {ok, EConn} = enoise:accept(TcpSock, Opts),
-
-%%     {EConn1, Msg} = enoise:recv(EConn),
-%%     EConn2 = enoise:send(EConn1, Msg),
-
-%%     enoise:close(EConn2)
-%%     end}.
+build_enoise_options(Protocol, Role, CliKP, SrvKP) ->
+    [{noise, Protocol}, {s, CliKP} | [{rs, SrvKP} || echo_srv:need_rs(Role, Protocol)]].
