@@ -62,20 +62,16 @@ noise_monitor_test() ->
     SrvKP = enoise_keypair:new(DH),
     CliKP = enoise_keypair:new(DH),
 
-    Proxy = spawn_monitor_proxy(
-        fun() -> noise_test_run(Proto, SrvKP, CliKP) end
-    ),
+    Proxy = proxy_srv:start(),
 
-    {ok, #{econn := EConn}} = proxy_wait_result(Proxy),
+    TestFun = fun() -> noise_test_run(Proto, SrvKP, CliKP) end,
+    {ok, #{econn := EConn}} = proxy_srv:exec(Proxy, TestFun),
 
-    try
-        proxy_exec(Proxy, fun() -> exit(normal) end)
-    catch
-        error:normal ->
-            receive after 20 ->
-                ?assertNot(enoise_connection:is_alive(EConn))
-            end
-    end.
+    {error, {'DOWN', normal}} = proxy_srv:exec(Proxy, fun() -> exit(normal) end),
+
+    timer:sleep(20),
+
+    ?assertNot(enoise_connection:is_alive(EConn)).
 
 -spec bad_handshake_test() -> _.
 bad_handshake_test() ->
@@ -169,44 +165,6 @@ noise_test_run(Proto, SrvKP, CliKP) ->
     ok = enoise:send(EConn, Msg2),
     ?assertEqual({ok, Msg2}, echo_srv:expected_reply(EConn)),
     #{econn => EConn, echo_srv => EchoSrv}.
-
-%%
-
-spawn_monitor_proxy(F) ->
-    Me = self(),
-    spawn_monitor(fun() ->
-        MRef = erlang:monitor(process, Me),
-        Me ! {self(), F()},
-        proxy_loop(Me, MRef)
-    end).
-
-proxy_loop(ParentPid, MRef) ->
-    receive
-        {exec, ParentPid, Ref, F} when is_function(F, 0) ->
-            ParentPid ! {exec_result, Ref, F()},
-            proxy_loop(ParentPid, MRef);
-        {'DOWN', MRef, process, ParentPid, _} ->
-            done
-    end.
-
-proxy_wait_result({Proxy, _}) ->
-    receive {Proxy, Res} ->
-        {ok, Res}
-    after 5000 ->
-        {error, timeout}
-    end.
-
-proxy_exec({Pid, Ref}, F) when is_function(F, 0) ->
-    Request = make_ref(),
-    Pid ! {exec, self(), Request, F},
-    receive
-        {exec_result, Request, Res} ->
-            Res;
-        {'DOWN', Ref, _, _, Reason} ->
-            erlang:error(Reason)
-    after 5000 ->
-        {error, timeout}
-    end.
 
 %% Talks to local echo-server (noise-c)
 %% client_test() ->
