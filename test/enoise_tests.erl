@@ -62,15 +62,11 @@ noise_monitor_test() ->
     SrvKP = enoise_keypair:new(DH),
     CliKP = enoise_keypair:new(DH),
 
-    {Proxy, _MRef} = spawn_monitor_proxy(
+    Proxy = spawn_monitor_proxy(
         fun() -> noise_test_run(Proto, SrvKP, CliKP) end
     ),
 
-    #{econn := EConn} = receive {Proxy, #{} = Info} ->
-        Info
-    after 5000 ->
-        erlang:error(timeout)
-    end,
+    {ok, #{econn := EConn}} = proxy_wait_result(Proxy),
 
     try
         proxy_exec(Proxy, fun() -> exit(normal) end)
@@ -193,16 +189,23 @@ proxy_loop(ParentPid, MRef) ->
             done
     end.
 
-proxy_exec(Pid, F) when is_function(F, 0) ->
-    R = erlang:monitor(process, Pid),
-    Pid ! {exec, self(), R, F},
+proxy_wait_result({Proxy, _}) ->
+    receive {Proxy, Res} ->
+        {ok, Res}
+    after 5000 ->
+        {error, timeout}
+    end.
+
+proxy_exec({Pid, Ref}, F) when is_function(F, 0) ->
+    Request = make_ref(),
+    Pid ! {exec, self(), Request, F},
     receive
-        {exec_result, R, Res} ->
+        {exec_result, Request, Res} ->
             Res;
-        {'DOWN', R, _, _, Reason} ->
+        {'DOWN', Ref, _, _, Reason} ->
             erlang:error(Reason)
     after 5000 ->
-        erlang:error(timeout)
+        {error, timeout}
     end.
 
 %% Talks to local echo-server (noise-c)
