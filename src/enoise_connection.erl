@@ -18,7 +18,8 @@
     controlling_process/2,
     close/1,
     send/2,
-    set_active/2
+    set_active/2,
+    is_alive/1
 ]).
 
 %% gen_server callbacks
@@ -104,6 +105,10 @@ close(#enoise{pid = Pid}) ->
 -spec controlling_process(t(), NewPid :: pid()) -> ok | {error, term()}.
 controlling_process(#enoise{pid = Pid}, NewPid) ->
     gen_server:call(Pid, {controlling_process, self(), NewPid}, 100).
+
+-spec is_alive(t()) -> boolean().
+is_alive(#enoise{pid = Pid}) ->
+    is_process_alive(Pid).
 
 %% -- gen_server callbacks ----------------------------------------------------
 

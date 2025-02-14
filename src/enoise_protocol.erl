@@ -28,7 +28,7 @@
 -type noise_dh() :: enoise_crypto:noise_dh().
 -type noise_cipher() :: enoise_crypto:noise_cipher().
 -type noise_hash() :: enoise_crypto:noise_hash().
--type noise_pattern() :: nn | kn | nk | kk | nx | kx | xn | in | xk | ik | xx | ix.
+-type noise_pattern() :: nn | kn | nk | nk1 | kk | kk1 | nx | nx1 | kx | kx1 | xn | in | xk | ik | xx | xx1 | ix | ix1.
 -type noise_token() :: s | e | ee | ss | es | se. % TODO: add psk
 -type noise_msg()     :: {in | out, [noise_token()]}.
 
@@ -131,16 +131,30 @@ role_adapt(responder, Msgs) ->
 
 %% The first character refers to the initiator's static key:
 %%
-%%  * N = No static key for initiator
-%%  * K = Static key for initiator Known to responder
-%%  * X = Static key for initiator Xmitted ("transmitted") to responder
-%%  * I = Static key for initiator Immediately transmitted to responder, despite reduced or absent identity hiding
+%%   * N = No static key for initiator
+%%   * K = Static key for initiator Known to responder
+%%   * X = Static key for initiator Xmitted ("transmitted") to responder
+%%   * I = Static key for initiator Immediately transmitted to responder,
+%%         despite reduced or absent identity hiding
 %%
 %% The second character refers to the responder's static key:
 %%
-%%  * N = No static key for responder
-%%  * K = Static key for responder Known to initiator
-%%  * X = Static key for responder Xmitted ("transmitted") to initiator
+%%   * N = No static key for responder
+%%   * K = Static key for responder Known to initiator
+%%   * X = Static key for responder Xmitted ("transmitted") to initiator
+%%
+%% A pre-message pattern is one of the following sequences of tokens:
+%%   * e
+%%   * s
+%%   * e, s
+%%   * <empty>
+%%
+%% A handshake pattern consists of:
+%%   * A pre-message pattern for the initiator, representing information about
+%%     the initiator's public keys that is known to the responder.
+%%   * A pre-message pattern for the responder, representing information about
+%%     the responder's public keys that is known to the initiator.
+%%   * A sequence of message patterns for the actual handshake messages.
 
 %% patterns se & es differs from https://noiseprotocol.org/noise.html#handshake-patterns
 
@@ -151,12 +165,20 @@ protocol(kn) ->
     {[{out, [s]}], [{out, [e]}, {in, [e, ee, se]}]};
 protocol(nk) ->
     {[{in, [s]}], [{out, [e, es]}, {in, [e, ee]}]};
+protocol(nk1) ->
+    {[{in, [s]}], [{out, [e]}, {in, [e, ee, es]}]};
 protocol(kk) ->
     {[{out, [s]}, {in, [s]}], [{out, [e, es, ss]}, {in, [e, ee, se]}]};
+protocol(kk1) ->
+    {[{out, [s]}, {in, [s]}], [{out, [e]}, {in, [e, ee, se, es]}]};
 protocol(nx) ->
     {[], [{out, [e]}, {in, [e, ee, s, es]}]};
+protocol(nx1) ->
+    {[], [{out, [e]}, {in, [e, ee, s]}, {out, [es]}]};
 protocol(kx) ->
     {[{out, [s]}], [{out, [e]}, {in, [e, ee, se, s, es]}]};
+protocol(kx1) ->
+    {[{out, [s]}], [{out, [e]}, {in, [e, ee, se, s]}, {out, [es]}]};
 protocol(xn) ->
     {[], [{out, [e]}, {in, [e, ee]}, {out, [s, se]}]};
 protocol(in) ->
@@ -167,8 +189,12 @@ protocol(ik) ->
     {[{in, [s]}], [{out, [e, es, s, ss]}, {in, [e, ee, se]}]};
 protocol(xx) ->
     {[], [{out, [e]}, {in, [e, ee, s, es]}, {out, [s, se]}]};
+protocol(xx1) ->
+    {[], [{out, [e]}, {in, [e, ee, s]}, {out, [es, s, se]}]};
 protocol(ix) ->
-    {[], [{out, [e, s]}, {in, [e, ee, se, s, es]}]}.
+    {[], [{out, [e, s]}, {in, [e, ee, se, s, es]}]};
+protocol(ix1) ->
+    {[], [{out, [e, s]}, {in, [e, ee, se, s]}, {out, [es]}]}.
 
 %% TODO: One-way handshake patterns
 %protocol(n) ->
@@ -191,7 +217,7 @@ is_supported(#noise_protocol{hs_pattern = Pattern, dh = Dh, cipher = Cipher, has
 -spec supported() -> map().
 supported() ->
     #{
-        hs_pattern => [nn, kn, nk, kk, nx, kx, xn, in, xk, ik, xx, ix],
+        hs_pattern => [nn, kn, nk, nk1, kk, kk1, nx, nx1, kx, kx1, xn, in, xk, ik, xx, xx1, ix, ix1],
         hash       => [blake2b, blake2s, sha256, sha512],
         cipher     => ['ChaChaPoly', 'AESGCM'],
         dh         => [dh25519, dh448]
@@ -207,15 +233,15 @@ to_name(Pattern, Dh, Cipher, Hash) ->
 
 to_name_pattern(Atom) ->
     [Simple | Rest] = string:lexemes(atom_to_list(Atom), "_"),
-    string:uppercase(Simple) ++ lists:join("+", Rest).
+    string:uppercase(Simple) ++ Rest.
 
 from_name_pattern(String) ->
-    [Init | Mod2] = string:lexemes(String, "+"),
-    {Simple, Mod1} = lists:splitwith(fun(C) -> C >= $A andalso C =< $Z end, Init),
+    SplitFun = fun(C) -> (C >= $A andalso C =< $Z) orelse (C >= $0 andalso C =< $9) end,
+    {Simple, Mod} = lists:splitwith(SplitFun, String),
     list_to_atom(string:lowercase(Simple) ++
-        case Mod1 of
+        case Mod of
             "" -> "";
-            _  -> "_" ++ lists:join([Mod1 | Mod2], "_")
+            _  -> [$_ | Mod]
         end).
 
 to_name_dh(dh25519) -> "25519";

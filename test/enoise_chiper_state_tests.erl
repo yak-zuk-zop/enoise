@@ -1,7 +1,3 @@
-%%%-------------------------------------------------------------------
-%%% @copyright (C) 2018, Aeternity Anstalt
-%%%-------------------------------------------------------------------
-
 -module(enoise_chiper_state_tests).
 
 -include_lib("eunit/include/eunit.hrl").

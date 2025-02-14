@@ -41,7 +41,7 @@
 %% configuration of pre-defined keys (`s', `e', `rs', `re') should also be
 %% provided.
 
--type noise_option() :: {noise, noise_protocol_option()} %% Required
+-type noise_option() :: {noise, noise_protocol()} %% Required
                       | {e, noise_keypair()} %% Mandatary depending on `noise'
                       | {s, noise_keypair()}
                       | {re, noise_key()}
@@ -49,7 +49,7 @@
                       | {prologue, binary()} %% Optional
                       | {timeout, integer() | infinity}. %% Optional
 
--type noise_protocol_option() :: enoise_protocol:protocol() | string() | binary().
+-type noise_protocol() :: enoise_protocol:protocol() | string() | binary().
 %% Either an instantiated Noise protocol configuration or the name of a Noise
 %% configuration (either as a string or a binary string).
 
@@ -189,6 +189,25 @@ set_active(Conn, Mode) ->
 
 %%-- internals ----------------------------------------------------------------
 
+-spec create_hstate(noise_options(), enoise_hs_state:noise_role()) -> handshake_state().
+create_hstate(Options, Role) ->
+    Prologue = proplists:get_value(prologue, Options, <<>>),
+    Proto    = proplists:get_value(noise, Options),
+
+    Protocol = case Proto of
+        X when is_binary(X); is_list(X) ->
+            enoise_protocol:from_name(X);
+        _ ->
+            Proto
+    end,
+
+    S  = proplists:get_value(s, Options, undefined),
+    E  = proplists:get_value(e, Options, undefined),
+    RS = proplists:get_value(rs, Options, undefined),
+    RE = proplists:get_value(re, Options, undefined),
+
+    enoise_hs_state:init(Protocol, Role, Prologue, {S, E, RS, RE}).
+
 -spec do_handshake(handshake_state(), noise_com_state(), timeout()) ->
     result({ok, noise_split_state(), noise_com_state()}).
 do_handshake(HState, ComState, Timeout) ->
@@ -237,14 +256,10 @@ hs_send_msg(CS = #{send_msg := Send, state := S}, Data) ->
 %% -- gen_tcp specific functions ----------------------------------------------
 
 tcp_handshake(TcpSock, Role, Options) ->
-    case check_gen_tcp(TcpSock) of
+    case check_socket(TcpSock) of
         ok ->
-            case inet:getopts(TcpSock, [active]) of
-                {ok, [{active, Active}]} ->
-                    do_tcp_handshake(Options, Role, TcpSock, Active);
-                {error, _} = Err ->
-                    Err
-            end;
+            {ok, [{active, Active}]} = inet:getopts(TcpSock, [active]),
+            do_tcp_handshake(Options, Role, TcpSock, Active);
         {error, _} = Err ->
             Err
     end.
@@ -263,27 +278,8 @@ do_tcp_handshake(Options, Role, TcpSock, Active) ->
             Err
     end.
 
--spec create_hstate(noise_options(), enoise_hs_state:noise_role()) -> handshake_state().
-create_hstate(Options, Role) ->
-    Prologue       = proplists:get_value(prologue, Options, <<>>),
-    NoiseProtocol0 = proplists:get_value(noise, Options),
-
-    NoiseProtocol = case NoiseProtocol0 of
-        X when is_binary(X); is_list(X) ->
-            enoise_protocol:from_name(X);
-        _ ->
-            NoiseProtocol0
-    end,
-
-    S  = proplists:get_value(s, Options, undefined),
-    E  = proplists:get_value(e, Options, undefined),
-    RS = proplists:get_value(rs, Options, undefined),
-    RE = proplists:get_value(re, Options, undefined),
-
-    enoise_hs_state:init(NoiseProtocol, Role, Prologue, {S, E, RS, RE}).
-
--spec check_gen_tcp(gen_tcp:socket()) -> result(ok).
-check_gen_tcp(TcpSock) ->
+-spec check_socket(gen_tcp:socket()) -> result(ok).
+check_socket(TcpSock) ->
     case inet:getopts(TcpSock, [mode, packet, active, header, packet_size]) of
         {ok, TcpOpts} ->
             Packet = proplists:get_value(packet, TcpOpts, 0),
@@ -299,7 +295,7 @@ check_gen_tcp(TcpSock) ->
                 false ->
                     {error, {invalid_tcp_options, TcpOpts}}
             end;
-        Err = {error, _} ->
+        {error, _} = Err ->
             Err
     end.
 

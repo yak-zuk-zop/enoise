@@ -13,7 +13,8 @@
     new/2,
     new/3,
     pubkey/1,
-    seckey/1
+    seckey/1,
+    keytype/1
 ]).
 
 -type key_type() :: enoise_crypto:noise_dh().
@@ -33,9 +34,9 @@
 %%-- API ----------------------------------------------------------------------
 
 %% @doc Generate a new keypair of type `Type'.
--spec new(Type :: key_type()) -> keypair().
+-spec new(key_type()) -> keypair().
 new(Type) ->
-    {Sec, Pub} = new_key_pair(Type),
+    #{secret := Sec, public := Pub} = enoise_crypto:new_key_pair(Type),
     #kp{type = Type, sec = Sec, pub = Pub}.
 
 %% @doc Create a new keypair of type `Type'. If `Public' is `undefined'
@@ -44,8 +45,8 @@ new(Type) ->
 -spec new(Type :: key_type(),
           Secret :: binary() | undefined,
           Public :: binary() | undefined) -> keypair().
-new(Type, Secret, undefined) ->
-    new(Type, Secret, pubkey_from_secret(Type, Secret));
+new(Type, Secret, undefined) when Secret =/= undefined ->
+    new(Type, Secret, enoise_crypto:pubkey_from_secret(Type, Secret));
 new(Type, Secret, Public) ->
     #kp{type = Type, sec = Secret, pub = Public}.
 
@@ -57,7 +58,11 @@ new(Type, Public) ->
 
 %%
 
--spec pubkey(KeyPair :: keypair()) -> binary().
+-spec keytype(keypair()) -> key_type().
+keytype(#kp{type = T}) ->
+    T.
+
+-spec pubkey(keypair()) -> binary().
 pubkey(#kp{pub = P}) ->
     P.
 
@@ -66,21 +71,3 @@ seckey(#kp{sec = undefined}) ->
     error(keypair_is_public_only);
 seckey(#kp{sec = S}) ->
     S.
-
-%% -- Local functions --------------------------------------------------------
-
-new_key_pair(dh25519) ->
-    #{public := PK, secret := SK} = enacl:crypto_sign_ed25519_keypair(),
-    {enacl:crypto_sign_ed25519_secret_to_curve25519(SK),
-     enacl:crypto_sign_ed25519_public_to_curve25519(PK)};
-new_key_pair(dh448) ->
-    {PK, SK} = crypto:generate_key(ecdh, x448),
-    {SK, PK};
-new_key_pair(Type) ->
-    error({unsupported_key_type, Type}).
-
-pubkey_from_secret(dh25519, Secret) ->
-    enacl:curve25519_scalarmult_base(Secret);
-pubkey_from_secret(dh448, Secret) ->
-    {PK, _SK} = crypto:generate_key(ecdh, x448, Secret),
-    PK.
