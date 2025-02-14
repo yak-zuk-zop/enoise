@@ -1,24 +1,21 @@
-%%%-------------------------------------------------------------------
-%%% @copyright (C) 2018, Aeternity Anstalt
-%%%-------------------------------------------------------------------
-
 -module(enoise_sym_state_tests).
 
 -include_lib("eunit/include/eunit.hrl").
 
--define(H2B(S), test_utils:hex_str_to_bin(S)).
+-define(H2B(S), test_utils:hex2bin(S)).
 
 -spec test() -> _.
 
--spec noise_XK_25519_ChaChaPoly_Blake2b_test() -> _.
-noise_XK_25519_ChaChaPoly_Blake2b_test() ->
-    Protocol =  enoise_protocol:from_name("Noise_XK_25519_ChaChaPoly_BLAKE2b"),
+-spec sym_state_test() -> _.
+sym_state_test() ->
+    Name = <<"Noise_XK_25519_ChaChaPoly_BLAKE2b">>,
+    Protocol = enoise_protocol:from_name(Name),
 
     SSE0 = enoise_sym_state:init(Protocol),
     SSD0 = enoise_sym_state:init(Protocol),
 
-    Name = enoise_protocol:to_name(Protocol),
-    PadName = enoise_crypto:pad(Name, enoise_crypto:hashlen(blake2b), 0),
+    Hash = enoise_protocol:hash(Protocol),
+    PadName = enoise_crypto:pad(Name, enoise_crypto:hashlen(Hash), 0),
 
     ?assertMatch(PadName, enoise_sym_state:h(SSE0)),
     ?assertMatch(PadName, enoise_sym_state:ck(SSE0)),
@@ -28,8 +25,11 @@ noise_XK_25519_ChaChaPoly_Blake2b_test() ->
     SSE1 = enoise_sym_state:mix_hash(SSE0, TestBin),
     SSD1 = enoise_sym_state:mix_hash(SSD0, TestBin),
 
-    ExpHash1 = enoise_crypto:hash(blake2b, <<PadName/binary, TestBin/binary>>),
-    ExpHash2 = ?H2B("0x8DC23DE176F6B3581FB7E18F258A47B1E1A8090BF55978868F1AC88C672DC3918FA4D1828338FB5DF652F5C33D57C79537CB5D074057EF59C346D0B35A160F71"),
+    ExpHash1 = enoise_crypto:hash(Hash, <<PadName/binary, TestBin/binary>>),
+    ExpHash2 = ?H2B(
+        "0x8DC23DE176F6B3581FB7E18F258A47B1E1A8090BF55978868F1AC88C672DC391"
+        "8FA4D1828338FB5DF652F5C33D57C79537CB5D074057EF59C346D0B35A160F71"
+    ),
     ?assertMatch(ExpHash1, enoise_sym_state:h(SSE1)),
     ?assertMatch(ExpHash2, enoise_sym_state:h(SSD1)),
 
@@ -39,7 +39,10 @@ noise_XK_25519_ChaChaPoly_Blake2b_test() ->
     SSE3 = enoise_sym_state:mix_key(SSE2, TestBin),
     SSD3 = enoise_sym_state:mix_key(SSD2, TestBin),
 
-    ExpEncrypt = ?H2B("0x24FB13758E6BA9901A4CEA117AE1D9AF757B02CAE96EFDFDA5ED3927BDD9FEA0239F7F673E924AAE81E6"),
+    ExpEncrypt = ?H2B(
+        "0x24FB13758E6BA9901A4CEA117AE1D9AF757B02CAE96EFDFDA5ED3927BDD9FEA0"
+        "239F7F673E924AAE81E6"
+    ),
     {ok, SSE4, Encrypt} = enoise_sym_state:encrypt_and_hash(SSE3, TestBin),
     ?assertMatch(ExpEncrypt, Encrypt),
     {ok, SSD4, Decrypt} = enoise_sym_state:decrypt_and_hash(SSD3, ExpEncrypt),

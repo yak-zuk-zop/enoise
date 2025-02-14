@@ -56,11 +56,9 @@
 
 %%-- API ----------------------------------------------------------------------
 
--spec init(Protocol :: string() | enoise_protocol:protocol(),
+-spec init(Protocol :: enoise_protocol:protocol(),
            Role :: noise_role(), Prologue :: binary(),
            Keys :: tuple()) -> state().
-init(ProtocolName, Role, Prologue, Keys) when is_list(ProtocolName) ->
-    init(enoise_protocol:from_name(ProtocolName), Role, Prologue, Keys);
 init(Protocol, Role, Prologue, {S, E, RS, RE}) ->
     SS0 = enoise_sym_state:init(Protocol),
     SS1 = enoise_sym_state:mix_hash(SS0, Prologue),
@@ -122,6 +120,8 @@ read_message(HS, [Token | Tokens], Msg0) ->
         {error, _} = Err -> Err
     end.
 
+-spec write_message(state(), [noise_token()], Msg :: binary()) ->
+    {state(), Msg :: binary()}.
 write_message(HS, [], MsgBuf) ->
     {HS, MsgBuf};
 write_message(HS, [Token | Tokens], MsgBuf0) ->
@@ -130,6 +130,8 @@ write_message(HS, [Token | Tokens], MsgBuf0) ->
 
 %%
 
+-spec read_token(state(), noise_token(), binary()) ->
+    {ok, state(), binary()} | {error, term()}.
 read_token(HS = #noise_hs{re = undefined, dh = DH}, Token = e, Data0) ->
     DHLen = enoise_crypto:dhlen(DH),
     case Data0 of
@@ -149,21 +151,22 @@ read_token(HS = #noise_hs{rs = undefined, dh = DH}, Token = s, Data0) ->
             case decrypt_and_hash(HS, Temp) of
                 {ok, HS1, RSPub} ->
                     RS = enoise_keypair:new(DH, RSPub),
-                    {ok, HS1#noise_hs{ rs = RS }, Data1};
-                Err = {error, _} ->
+                    {ok, HS1#noise_hs{rs = RS}, Data1};
+                {error, _} = Err ->
                     Err
             end;
         _ ->
             {error, {bad_data, {failed_to_read_token, Token, DHLen}}}
     end;
 read_token(HS, Token, Data) ->
-    {K1, K2} = dh_token(HS, Token),
-    {ok, mix_key(HS, dh(HS, K1, K2)), Data}.
+    {ok, mix_key(HS, dh(dh_token(HS, Token))), Data}.
 
 %%
 
-write_token(HS = #noise_hs{e = undefined}, e) ->
-    E = new_key_pair(HS),
+-spec write_token(state(), noise_token()) ->
+    {state(), PubKey :: binary()}.
+write_token(HS = #noise_hs{e = undefined, dh = DH}, e) ->
+    E = enoise_keypair:new(DH),
     PubE = enoise_keypair:pubkey(E),
     {mix_hash(HS#noise_hs{e = E}, PubE), PubE};
 %% Should only apply during test - TODO: secure this
@@ -174,8 +177,7 @@ write_token(HS = #noise_hs{s = S}, s) ->
     {ok, HS1, Msg} = encrypt_and_hash(HS, enoise_keypair:pubkey(S)),
     {HS1, Msg};
 write_token(HS, Token) ->
-    {K1, K2} = dh_token(HS, Token),
-    {mix_key(HS, dh(HS, K1, K2)), <<>>}.
+    {mix_key(HS, dh(dh_token(HS, Token))), <<>>}.
 
 -spec dh_token(state(), noise_token()) -> {keypair() | undefined, keypair() | undefined}.
 dh_token(#noise_hs{e = E, re = RE}                  , ee) -> {E, RE};
@@ -187,13 +189,9 @@ dh_token(#noise_hs{s = S, rs = RS}                  , ss) -> {S, RS}.
 
 %%-- Local wrappers -----------------------------------------------------------
 
--spec new_key_pair(state()) -> keypair().
-new_key_pair(#noise_hs{dh = DH}) ->
-    enoise_keypair:new(DH).
-
--spec dh(state(), keypair(), keypair()) -> binary().
-dh(#noise_hs{dh = DH}, Key1, Key2) ->
-    enoise_crypto:dh(DH, Key1, Key2).
+-spec dh({keypair(), keypair()}) -> binary().
+dh({Key1, Key2}) ->
+    enoise_crypto:dh(Key1, Key2).
 
 -spec has_key(state()) -> boolean().
 has_key(#noise_hs{ss = SS}) ->

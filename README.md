@@ -16,7 +16,7 @@ care of message composition/decompositiona and encryption/decryption - i.e. the
 user has to do the actual sending and receiving.
 
 An example of the interactive handshake can be seen in the `noise_interactive`
-test in `test/enoise_tests.erl`.
+test in `test/enoise_handshake_tests.erl`.
 
 Generic handshake
 -----------------
