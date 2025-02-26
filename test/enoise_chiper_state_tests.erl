@@ -6,13 +6,14 @@
 
 -spec chachapoly_test() -> _.
 chachapoly_test() ->
+    Cipher = 'ChaChaPoly',
     #{key := Key, nonce := Nonce, ad := AD, mac := MAC,
-      pt := PlainText, ct := CipherText} = test_utils:chacha_data(),
+      pt := PlainText, ct := CipherText} = test_utils:cipher_data(Cipher),
     PTLen  = byte_size(PlainText),
     CTLen  = byte_size(CipherText),
     MACLen = byte_size(MAC),
 
-    CS0 = enoise_cipher_state:init(Key, 'ChaChaPoly'),
+    CS0 = enoise_cipher_state:init(Key, Cipher),
     CS1 = enoise_cipher_state:set_nonce(CS0, Nonce),
 
     {ok, _CS2, <<CipherText0:CTLen/binary, MAC0:MACLen/binary>>} =
