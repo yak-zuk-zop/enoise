@@ -37,8 +37,8 @@ noise_test(Protocol, Init, Resp, Messages, HSHash) ->
 noise_test([M = #{payload := PL0, ciphertext := CT0} | Msgs], SendHS, RecvHS, HSHash) ->
     case {enoise_hs_state:next_message(SendHS), enoise_hs_state:next_message(RecvHS)} of
         {out, in} ->
-            PL = test_utils:hex2bin("0x" ++ binary_to_list(PL0)),
-            CT = test_utils:hex2bin("0x" ++ binary_to_list(CT0)),
+            PL = test_utils:hex2bin(<<$0, $x, PL0/binary>>),
+            CT = test_utils:hex2bin(<<$0, $x, CT0/binary>>),
 
             {ok, SendHS1, Message} = enoise_hs_state:write_message(SendHS, PL),
             ?assertEqual(CT, Message),
@@ -57,8 +57,8 @@ noise_test([M = #{payload := PL0, ciphertext := CT0} | Msgs], SendHS, RecvHS, HS
 
 message_test([], _, _) -> ok;
 message_test([#{payload := PL0, ciphertext := CT0} | Msgs], CA, CB) ->
-    PL = test_utils:hex2bin("0x" ++ binary_to_list(PL0)),
-    CT = test_utils:hex2bin("0x" ++ binary_to_list(CT0)),
+    PL = test_utils:hex2bin(<<$0, $x, PL0/binary>>),
+    CT = test_utils:hex2bin(<<$0, $x, CT0/binary>>),
     {ok, CA1, CT1} = enoise_cipher_state:encrypt_with_ad(CA, <<>>, PL),
     ?assertEqual(CT, CT1),
     {ok, CA2, PL1} = enoise_cipher_state:decrypt_with_ad(CA, <<>>, CT1),

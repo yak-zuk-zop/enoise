@@ -34,9 +34,13 @@
 
 %% -- utils -------------------------------------------------------------------
 
--spec hex2bin(string()) -> binary().
+-spec hex2bin(string() | binary()) -> binary().
 hex2bin([$0, $x | Rest]) ->
-    << <<(list_to_integer([C], 16)):4>> || C <- Rest >>.
+    << <<(list_to_integer([C], 16)):4>> || C <- Rest >>;
+hex2bin(<<$0, $x, Rest/binary>>) ->
+    << <<(list_to_integer([C], 16)):4>> || <<C:8>> <= Rest >>.
+
+%%
 
 -spec protocol_filter_all(protocol()) -> boolean().
 protocol_filter_all(_) ->
@@ -59,7 +63,7 @@ init_hs_test(V = #{protocol_name := Name}, TestFun) ->
 
     FixK = fun
         (undefined) -> undefined;
-        (Bin) -> test_utils:hex2bin("0x" ++ binary_to_list(Bin))
+        (Bin) -> hex2bin(<<$0, $x, Bin/binary>>)
     end,
 
     Init = #{ prologue => FixK(maps:get(init_prologue, V, <<>>))

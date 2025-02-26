@@ -122,8 +122,8 @@ noise_interactive(Protocol, Init, Resp, Messages, HSHash) ->
     noise_interactive(Messages, InitHS, RespHS, HSHash).
 
 noise_interactive([#{payload := PL0, ciphertext := CT0} | Msgs], SendHS, RecvHS, HSHash) ->
-    PL = test_utils:hex2bin("0x" ++ binary_to_list(PL0)),
-    CT = test_utils:hex2bin("0x" ++ binary_to_list(CT0)),
+    PL = test_utils:hex2bin(<<$0, $x, PL0/binary>>),
+    CT = test_utils:hex2bin(<<$0, $x, CT0/binary>>),
     case enoise_hs_state:next_message(SendHS) of
         out ->
             {ok, send, Message, SendHS1} = enoise:step_handshake(SendHS, {send, PL}),
