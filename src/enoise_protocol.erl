@@ -251,7 +251,13 @@ is_supported(#noise_protocol{hs_pattern = Pattern, dh = Dh, cipher = Cipher, has
     lists:member(Dh, maps:get(dh, Supported)) andalso
     lists:member(Hash, maps:get(hash, Supported)).
 
--spec supported() -> map().
+-spec supported() -> Result when
+    Result :: #{
+        hs_pattern := [noise_pattern()],
+        hash := [noise_hash()],
+        cipher := [noise_cipher()],
+        dh := [noise_dh()]
+    }.
 supported() ->
     #{
         hs_pattern => [
