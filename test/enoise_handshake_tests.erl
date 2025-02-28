@@ -4,6 +4,10 @@
 
 -spec test() -> _.
 
+-dialyzer({nowarn_function, [
+    noise_monitor_test/0
+]}).
+
 %%-- fixtures -----------------------------------------------------------------
 
 -spec noise_interactive_test_() -> _.
