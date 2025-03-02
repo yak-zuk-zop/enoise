@@ -22,7 +22,7 @@ jobs:
     - uses: actions/checkout@v4
     - name: Get apps
       run: |
-        which libsodium || (apk add --update --no-cache libsodium)
+        which libsodium-dev || (apk add --update --no-cache libsodium-dev)
         which cc || (apk add --update --no-cache build-base)
     - name: Compile
       run: rebar3 compile
