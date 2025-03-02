@@ -20,6 +20,9 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    - name: Get apps
+      run: |
+        which cc || (apk add --update --no-cache build-base)
     - name: Compile
       run: rebar3 compile
     - name: XRef
