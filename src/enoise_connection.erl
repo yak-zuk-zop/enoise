@@ -1,20 +1,18 @@
-%%% ------------------------------------------------------------------
-%%% @copyright 2018, Aeternity Anstalt
-%%%
-%%% @doc Module implementing a gen_server for holding a handshaked
-%%% Noise connection over gen_tcp.
-%%%
-%%% Some care is needed since the underlying transmission is broken up
-%%% into Noise packets, so we need some buffering.
-%%%
-%%% @end
-%%% ------------------------------------------------------------------
+%% ----------------------------------------------------------------------------
+%% @doc Module implementing a gen_server for holding a handshaked
+%% Noise connection over gen_tcp.
+%%
+%% Some care is needed since the underlying transmission is broken up
+%% into Noise packets, so we need some buffering.
+%%
+%% @end
+%% ----------------------------------------------------------------------------
 
 -module(enoise_connection).
 
 %% API
 -export([
-    start_link/5,
+    start_link/4,
     controlling_process/2,
     close/1,
     send/2,
@@ -36,7 +34,7 @@
     active/0
 ]).
 
--record(enoise, {
+-record(enoise_conn, {
     pid :: pid()
 }).
 
@@ -51,16 +49,18 @@
     rawbuf = <<>> :: binary()
 }).
 
--type t() :: #enoise{}.
+-opaque t() :: #enoise_conn{}.
+
 -type active() :: true | once.
 -type state() :: #state{}.
 -type cipher_state() :: enoise_cipher_state:state().
+-type com_state() :: {gen_tcp:socket(), active(), binary()}.
 
 %% -- API ---------------------------------------------------------------------
 
--spec start_link(gen_tcp:socket(), cipher_state(), cipher_state(), pid(), {active(), binary()}) ->
+-spec start_link(com_state(), cipher_state(), cipher_state(), pid()) ->
     {ok, t()} | {error, term()}.
-start_link(TcpSock, Rx, Tx, Owner, {Active0, Buf}) ->
+start_link({TcpSock, Active0, Buf}, Rx, Tx, Owner) ->
     Active = case Active0 of
         true -> true;
         once -> {once, false}
@@ -74,7 +74,7 @@ start_link(TcpSock, Rx, Tx, Owner, {Active0, Buf}) ->
 
     case gen_server:start_link(?MODULE, State, []) of
         {ok, Pid} ->
-            Conn = #enoise{pid = Pid},
+            Conn = #enoise_conn{pid = Pid},
             case gen_tcp:controlling_process(TcpSock, Pid) of
                 ok ->
                     %% Changing controlling process require a bit of
@@ -91,29 +91,29 @@ start_link(TcpSock, Rx, Tx, Owner, {Active0, Buf}) ->
     end.
 
 -spec send(t(), Data :: binary()) -> ok | {error, term()}.
-send(#enoise{pid = Pid}, Data) ->
+send(#enoise_conn{pid = Pid}, Data) ->
     gen_server:call(Pid, {send, Data}).
 
 -spec set_active(t(), active()) -> ok | {error, term()}.
-set_active(#enoise{pid = Pid}, Active) ->
+set_active(#enoise_conn{pid = Pid}, Active) ->
     gen_server:call(Pid, {active, self(), Active}).
 
 -spec close(t()) -> ok.
-close(#enoise{pid = Pid}) ->
+close(#enoise_conn{pid = Pid}) ->
     gen_server:call(Pid, close).
 
 -spec controlling_process(t(), NewPid :: pid()) -> ok | {error, term()}.
-controlling_process(#enoise{pid = Pid}, NewPid) ->
+controlling_process(#enoise_conn{pid = Pid}, NewPid) ->
     gen_server:call(Pid, {controlling_process, self(), NewPid}, 100).
 
 -spec is_alive(t()) -> boolean().
-is_alive(#enoise{pid = Pid}) ->
+is_alive(#enoise_conn{pid = Pid}) ->
     is_process_alive(Pid).
 
 %% -- gen_server callbacks ----------------------------------------------------
 
 -spec init(state()) -> {ok, state()}.
-init(#state{owner = Owner} = S) ->
+init(S = #state{owner = Owner}) ->
     {ok, S#state{
         owner_ref = erlang:monitor(process, Owner)
     }}.
@@ -183,8 +183,8 @@ handle_control_change(S, _OldPid, _NewPid) ->
 handle_active(S = #state{owner = Pid, tcp_sock = TcpSock}, Pid, Active) ->
     case Active of
         true ->
-            ok = inet:setopts(TcpSock, [{active, true}]),
-            {ok, handle_msgs(S#state{active = true})};
+            Res = inet:setopts(TcpSock, [{active, true}]),
+            {Res, handle_msgs(S#state{active = true})};
         once ->
             S1 = handle_msgs(S#state{active = {once, false}}),
             {set_active(S1), S1}
@@ -224,7 +224,7 @@ handle_msgs(S = #state{msgbuf = [Msg | Msgs], active = {once, false}, owner = Ow
     S#state{msgbuf = Msgs, active = {once, true}}.
 
 reply(Pid, Msg) ->
-    Pid ! {reply, #enoise{pid = self()}, Msg},
+    Pid ! {reply, #enoise_conn{pid = self()}, Msg},
     ok.
 
 -spec handle_send(state(), binary()) -> {ok | {error, term()}, state()}.

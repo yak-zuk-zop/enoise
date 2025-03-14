@@ -1,6 +1,4 @@
 %%-----------------------------------------------------------------------------
-%% @copyright 2018, Aeternity Anstalt
-%%
 %% @doc Module encapsulating a Noise symmetric (hash) state
 %%
 %% A SymmetricState object contains a CipherState plus ck and h variables.

@@ -4,6 +4,10 @@
 
 -spec test() -> _.
 
+-dialyzer({nowarn_function, [
+    noise_monitor_test/0
+]}).
+
 %%-- fixtures -----------------------------------------------------------------
 
 -spec noise_interactive_test_() -> _.
@@ -11,10 +15,8 @@ noise_interactive_test_() ->
     {setup,
         fun() -> test_utils:noise_test_vectors(fun test_utils:protocol_filter_interactive/1) end,
         fun(Tests) ->
-            [{
-                maps:get(protocol_name, T),
-                fun() -> test_utils:init_hs_test(T, fun noise_interactive/5) end
-            } || T <- Tests]
+            TestCaseFun = fun(T) -> test_utils:init_hs_test(T, fun noise_interactive/5) end,
+            [{maps:get(protocol_name, T), {with, T, [TestCaseFun]}} || T <- Tests]
         end
     }.
 
@@ -65,8 +67,8 @@ noise_monitor_test() ->
 
     ClientFun = fun() ->
         {ok, TcpSock} = gen_tcp:connect("localhost", Port, [{active, true}, binary], 100),
-        Opts = build_enoise_options(Proto, initiator, CliKP, SrvKP),
-        {ok, EConn, _} = enoise:connect(TcpSock, Opts),
+        Opts = echo_srv:build_enoise_options(Proto, initiator, CliKP, SrvKP),
+        {ok, EConn, _} = enoise:init(TcpSock, Opts),
 
         Msg1 = <<"Hello World!">>,
         ok = enoise:send(EConn, Msg1),
@@ -109,21 +111,22 @@ noise_interactive(Protocol, Init, Resp, Messages, HSHash) ->
     HSInit = fun(#{e := E, s := S, rs := RS, prologue := PL}, R) ->
         Opts = [
             {noise, Protocol},
-            {s, test_utils:maybe_new_keypare(DH, {secret, S})},
-            {e, test_utils:maybe_new_keypare(DH, {secret, E})},
-            {rs, test_utils:maybe_new_keypare(DH, {public, RS})},
+            {role, R},
+            {s, test_utils:maybe_new_keypair(DH, {secret, S})},
+            {e, test_utils:maybe_new_keypair(DH, {secret, E})},
+            {rs, test_utils:maybe_new_keypair(DH, {public, RS})},
             {prologue, PL}
         ],
-        enoise:handshake(Opts, R)
+        enoise:create_hstate(Opts)
     end,
-    {ok, InitHS} = HSInit(Init, initiator),
-    {ok, RespHS} = HSInit(Resp, responder),
+    InitHS = HSInit(Init, initiator),
+    RespHS = HSInit(Resp, responder),
 
     noise_interactive(Messages, InitHS, RespHS, HSHash).
 
 noise_interactive([#{payload := PL0, ciphertext := CT0} | Msgs], SendHS, RecvHS, HSHash) ->
-    PL = test_utils:hex2bin("0x" ++ binary_to_list(PL0)),
-    CT = test_utils:hex2bin("0x" ++ binary_to_list(CT0)),
+    PL = test_utils:hex2bin(<<$0, $x, PL0/binary>>),
+    CT = test_utils:hex2bin(<<$0, $x, CT0/binary>>),
     case enoise_hs_state:next_message(SendHS) of
         out ->
             {ok, send, Message, SendHS1} = enoise:step_handshake(SendHS, {send, PL}),
@@ -147,30 +150,24 @@ noise_interactive([#{payload := PL0, ciphertext := CT0} | Msgs], SendHS, RecvHS,
 
 -spec noise_test_simple(binary(), enoise_keypair:keypair(), enoise_keypair:keypair()) -> ok.
 noise_test_simple(Name, SrvKP, CliKP) ->
+    Msgs    = [<<"Hello World!">>, <<"Thank you all">>, <<"Goodbye!">>],
     Proto   = enoise_protocol:from_name(Name),
     TcpOpts = [{active, true}, binary],
     Port    = 4556,
-    SrvOpts = [{echos, 2}, {cpub, CliKP}],
+    SrvOpts = [{echos, length(Msgs)}, {cpub, CliKP}],
     EchoSrv = echo_srv:start(Port, Proto, SrvKP, SrvOpts),
 
     {ok, TcpSock} = gen_tcp:connect("localhost", Port, TcpOpts, 100),
 
-    Opts = build_enoise_options(Proto, initiator, CliKP, SrvKP),
-    {ok, EConn, _} = enoise:connect(TcpSock, Opts),
+    Opts = echo_srv:build_enoise_options(Proto, initiator, CliKP, SrvKP),
+    {ok, EConn, _} = enoise:init(TcpSock, Opts),
 
-    Msg1 = <<"Hello World!">>,
-    ok = enoise:send(EConn, Msg1),
-    ?assertEqual({ok, Msg1}, echo_srv:expected_reply(EConn)),
-
-    Msg2 = <<"Goodbye!">>,
-    ok = enoise:send(EConn, Msg2),
-    ?assertEqual({ok, Msg2}, echo_srv:expected_reply(EConn)),
+    TestFun = fun(Msg) ->
+        ok = enoise:send(EConn, Msg),
+        ?assertEqual({ok, Msg}, echo_srv:expected_reply(EConn))
+    end,
+    lists:foreach(TestFun, Msgs),
 
     enoise:close(EConn),
     echo_srv:stop(EchoSrv),
     ok.
-
-%%-- internals ----------------------------------------------------------------
-
-build_enoise_options(Protocol, Role, CliKP, SrvKP) ->
-    [{noise, Protocol}, {s, CliKP} | [{rs, SrvKP} || echo_srv:need_rs(Role, Protocol)]].

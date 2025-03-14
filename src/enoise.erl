@@ -1,37 +1,30 @@
-%%% ------------------------------------------------------------------
-%%% @copyright 2018, Aeternity Anstalt
-%%%
-%%% @doc Module is an interface to the Noise protocol
-%%% [https://noiseprotocol.org]
-%%%
-%%% The module implements Noise handshake in `handshake/3'.
-%%%
-%%% For convenience there is also an API to use Noise over TCP (i.e. `gen_tcp')
-%%% and after "upgrading" a `gen_tcp'-socket into a `enoise'-socket it has a
-%%% similar API as `gen_tcp'.
-%%%
-%%% @end ------------------------------------------------------------------
+%% ----------------------------------------------------------------------------
+%% @doc Module is an interface to the Noise protocol
+%% [https://noiseprotocol.org]
+%%
+%% For convenience there is also an API to use Noise over TCP (i.e. `gen_tcp')
+%% and after "upgrading" a `gen_tcp'-socket into a `enoise'-socket it has a
+%% similar API as `gen_tcp'.
+%%
+%% @end -----------------------------------------------------------------------
 
 -module(enoise).
 
-%% Main function with generic Noise handshake
+%% API
 -export([
-    handshake/2,
-    handshake/3,
-    step_handshake/2
-]).
-
-%% API exports - Mainly mimicing gen_tcp
--export([
-    accept/2,
+    init/2,
     close/1,
-    connect/2,
     controlling_process/2,
     send/2,
-    set_active/2
+    set_active/2,
+    handshake/2,
+    create_hstate/1,
+    step_handshake/2,
+    encrypt/2,
+    decrypt/2
 ]).
 
--type noise_key() :: binary().
+-type noise_key() :: enoise_crypto:noise_key().
 -type noise_keypair() :: enoise_keypair:keypair().
 
 -type noise_options() :: [noise_option()].
@@ -42,32 +35,33 @@
 %% provided.
 
 -type noise_option() :: {noise, noise_protocol()} %% Required
+                      | {role, enoise_hs_state:noise_role()} %% Required
                       | {e, noise_keypair()} %% Mandatary depending on `noise'
                       | {s, noise_keypair()}
                       | {re, noise_key()}
                       | {rs, noise_key()}
                       | {prologue, binary()} %% Optional
-                      | {timeout, integer() | infinity}. %% Optional
+                      | {timeout, timeout()}.%% Optional
 
 -type noise_protocol() :: enoise_protocol:protocol() | string() | binary().
 %% Either an instantiated Noise protocol configuration or the name of a Noise
 %% configuration (either as a string or a binary string).
 
--type com_state_state() :: {gen_tcp:socket(), socket_mode(), binary()}.
-%% The state part of a communiction state
+-type com_state() :: {gen_tcp:socket(), socket_mode(), binary()}.
+%% The communiction state of a handshake context
 
--type recv_msg_fun() :: fun((com_state_state(), integer() | infinity) ->
-                            result({ok, binary(), com_state_state()})).
+-type recv_msg_fun() :: fun((com_state(), timeout()) ->
+                            result({ok, binary(), com_state()})).
 %% Function that receive a message
 
--type send_msg_fun() :: fun((com_state_state(), binary()) -> ok).
+-type send_msg_fun() :: fun((com_state(), binary()) -> ok).
 %% Function that sends a message
 
--type noise_com_state() :: #{ recv_msg := recv_msg_fun(),
-                              send_msg := send_msg_fun(),
-                              state    := com_state_state()}.
-%% Noise communication state - used to parameterize a handshake. Consists of a
-%% send function, one receive function, and an internal state.
+-type noise_com_context() :: #{recv_msg := recv_msg_fun(),
+                               send_msg := send_msg_fun(),
+                               state    := com_state()}.
+%% Noise handshake communication context. Consists of a
+%% send, receive functions, and an internal state.
 
 -type noise_split_state() :: enoise_hs_state:noise_split_state().
 %% Return value from the final `split' operation. Provides a CipherState for
@@ -75,6 +69,7 @@
 %% hash for channel binding.
 
 -type handshake_state() :: enoise_hs_state:state().
+-type cipher_state()    :: enoise_cipher_state:state().
 
 -type result(Expected) :: Expected | {error, term()}.
 
@@ -88,27 +83,100 @@
     noise_options/0
 ]).
 
-%%====================================================================
-%% API functions
-%%====================================================================
+%% -- API ---------------------------------------------------------------------
 
-%% @doc Start an interactive handshake
+%% @doc Initialize a Noise connection and perform handshake
+%%
+%% Upgrades a gen_tcp, or equivalent, connected socket to a Noise socket.
+%%
+%% Note: The TCP socket has to be in mode `{active, true}' or `{active, once}',
+%% passive receive is not supported.
+%%
+%% {@link noise_options()} is a proplist.
 %% @end
--spec handshake(noise_options(), enoise_hs_state:noise_role()) ->
-    {ok, handshake_state()}.
-handshake(Options, Role) ->
-    {ok, create_hstate(Options, Role)}.
+-spec init(gen_tcp:socket(), noise_options()) ->
+    result({ok, conn(), handshake_state()}).
+init(TcpSock, Options) ->
+    case check_socket(TcpSock) of
+        ok ->
+            case handshake(Options, build_tcp_com_context(TcpSock)) of
+                {ok, #{rx := Rx, tx := Tx, final_state := FState}, #{state := ComState}} ->
+                    case enoise_connection:start_link(ComState, Rx, Tx, self()) of
+                        {ok, Conn} -> {ok, Conn, FState};
+                        {error, _} = Err -> Err
+                    end;
+                {error, _} = Err ->
+                    Err
+            end;
+        {error, _} = Err ->
+            Err
+    end.
 
 %% @doc Perform a Noise handshake
+%% {@link noise_options()} is a proplist.
 %% @end
--spec handshake(noise_options(), enoise_hs_state:noise_role(), noise_com_state()) ->
-    result({ok, noise_split_state(), noise_com_state()}).
-handshake(Options, Role, ComState) ->
-    HState = create_hstate(Options, Role),
+-spec handshake(noise_options(), noise_com_context()) ->
+    result({ok, noise_split_state(), noise_com_context()}).
+handshake(Options, ComCtx) ->
+    HState = create_hstate(Options),
     Timeout = proplists:get_value(timeout, Options, infinity),
-    do_handshake(HState, ComState, Timeout).
+    do_handshake(HState, ComCtx, Timeout).
 
-%% @doc Do a step (either `{send, Payload}', `{rcvd, EncryptedData}', or `done')
+%% @doc Writes `Data' to `Socket'
+-spec send(conn(), binary()) -> result(ok).
+send(Conn, Data) ->
+    enoise_connection:send(Conn, Data).
+
+%% @doc Closes a Noise connection.
+-spec close(conn()) -> result(ok).
+close(Conn) ->
+    enoise_connection:close(Conn).
+
+%% @doc Assigns a new controlling process to the Noise socket. A controlling
+%% process is the owner of an Noise socket, and receives all messages from the
+%% socket.
+%% @end
+-spec controlling_process(conn(), pid()) -> result(ok).
+controlling_process(Conn, NewPid) ->
+    enoise_connection:controlling_process(Conn, NewPid).
+
+%% @doc Set the active option `true | once'. Note that `N' and `false' are
+%% not valid options for a Noise socket.
+%% @end
+-spec set_active(conn(), socket_mode()) -> result(ok).
+set_active(Conn, Mode) ->
+    enoise_connection:set_active(Conn, Mode).
+
+%% @doc Create a handshake state
+%% {@link noise_options()} is a proplist.
+%% @end
+-spec create_hstate(noise_options()) -> handshake_state().
+create_hstate(Options) ->
+    Prologue = proplists:get_value(prologue, Options, <<>>),
+    Proto    = proplists:get_value(noise, Options),
+    Role     = proplists:get_value(role, Options),
+
+    Protocol = case Proto of
+        X when is_binary(X); is_list(X) ->
+            enoise_protocol:from_name(X);
+        _ ->
+            Proto
+    end,
+
+    S  = proplists:get_value(s, Options, undefined),
+    E  = proplists:get_value(e, Options, undefined),
+    RS = proplists:get_value(rs, Options, undefined),
+    RE = proplists:get_value(re, Options, undefined),
+
+    enoise_hs_state:init(Protocol, Role, Prologue, {S, E, RS, RE}).
+
+%% @doc Perform a handshake step.
+%% Data possible values:
+%% <ul>
+%%   <li>{send, Payload}</li>
+%%   <li>{rcvd, EncryptedData}</li>
+%%   <li>done</li>
+%% </ul>
 %% @end
 -spec step_handshake(handshake_state(), {rcvd, binary()} | {send, binary()} | done) ->
           {ok, send, binary(), handshake_state()}
@@ -134,90 +202,32 @@ step_handshake(HState, Data) ->
             {error, {invalid_step, expected, Next, got, Data}}
     end.
 
-%% @doc Upgrades a gen_tcp, or equivalent, connected socket to a Noise socket,
-%% that is, performs the client-side noise handshake.
-%%
-%% Note: The TCP socket has to be in mode `{active, true}' or `{active, once}',
-%% passive receive is not supported.
-%%
-%% {@link noise_options()} is a proplist.
+%% @doc Encrypt message for further transmitting.
+%% Cipher state is received as a result of handshake.
 %% @end
--spec connect(gen_tcp:socket(), noise_options()) ->
-    result({ok, conn(), handshake_state()}).
-connect(TcpSock, Options) ->
-    tcp_handshake(TcpSock, initiator, Options).
+-spec encrypt(cipher_state(), binary()) -> {ok, cipher_state(), binary()}.
+encrypt(CState, Msg) ->
+    enoise_cipher_state:encrypt_with_ad(CState, <<>>, Msg).
 
-%% @doc Upgrades a gen_tcp, or equivalent, connected socket to a Noise socket,
-%% that is, performs the server-side noise handshake.
-%%
-%% Note: The TCP socket has to be in mode `{active, true}' or `{active, once}',
-%% passive receive is not supported.
-%%
-%% {@link noise_options()} is a proplist.
+%% @doc Decrypt received message.
+%% Cipher state is received as a result of handshake.
 %% @end
--spec accept(gen_tcp:socket(), noise_options()) ->
-    result({ok, conn(), handshake_state()}).
-accept(TcpSock, Options) ->
-    tcp_handshake(TcpSock, responder, Options).
-
-%% @doc Writes `Data' to `Socket'
-%% @end
--spec send(conn(), binary()) -> result(ok).
-send(Conn, Data) ->
-    enoise_connection:send(Conn, Data).
-
-%% @doc Closes a Noise connection.
-%% @end
--spec close(conn()) -> result(ok).
-close(Conn) ->
-    enoise_connection:close(Conn).
-
-%% @doc Assigns a new controlling process to the Noise socket. A controlling
-%% process is the owner of an Noise socket, and receives all messages from the
-%% socket.
-%% @end
--spec controlling_process(conn(), pid()) -> result(ok).
-controlling_process(Conn, NewPid) ->
-    enoise_connection:controlling_process(Conn, NewPid).
-
-%% @doc Set the active option `true | once'. Note that `N' and `false' are
-%% not valid options for a Noise socket.
-%% @end
--spec set_active(conn(), socket_mode()) -> result(ok).
-set_active(Conn, Mode) ->
-    enoise_connection:set_active(Conn, Mode).
+-spec decrypt(cipher_state(), binary()) -> result({ok, cipher_state(), binary()}).
+decrypt(CState, Encrypted) ->
+    enoise_cipher_state:decrypt_with_ad(CState, <<>>, Encrypted).
 
 %%-- internals ----------------------------------------------------------------
 
--spec create_hstate(noise_options(), enoise_hs_state:noise_role()) -> handshake_state().
-create_hstate(Options, Role) ->
-    Prologue = proplists:get_value(prologue, Options, <<>>),
-    Proto    = proplists:get_value(noise, Options),
-
-    Protocol = case Proto of
-        X when is_binary(X); is_list(X) ->
-            enoise_protocol:from_name(X);
-        _ ->
-            Proto
-    end,
-
-    S  = proplists:get_value(s, Options, undefined),
-    E  = proplists:get_value(e, Options, undefined),
-    RS = proplists:get_value(rs, Options, undefined),
-    RE = proplists:get_value(re, Options, undefined),
-
-    enoise_hs_state:init(Protocol, Role, Prologue, {S, E, RS, RE}).
-
--spec do_handshake(handshake_state(), noise_com_state(), timeout()) ->
-    result({ok, noise_split_state(), noise_com_state()}).
-do_handshake(HState, ComState, Timeout) ->
+-spec do_handshake(handshake_state(), noise_com_context(), timeout()) ->
+    result({ok, noise_split_state(), noise_com_context()}).
+do_handshake(HState, ComCtx, Timeout) ->
     case enoise_hs_state:next_message(HState) of
         in ->
-            case hs_recv_msg(ComState, Timeout) of
-                {ok, Data, ComState1} ->
+            case hs_recv_msg(ComCtx, Timeout) of
+                {ok, Data, ComCtx1} ->
                     case enoise_hs_state:read_message(HState, Data) of
                         {ok, HState1, _Msg} ->
-                            do_handshake(HState1, ComState1, Timeout);
+                            do_handshake(HState1, ComCtx1, Timeout);
                         {error, _} = Err ->
                             Err
                     end;
@@ -226,27 +236,27 @@ do_handshake(HState, ComState, Timeout) ->
             end;
         out ->
             {ok, HState1, Msg} = enoise_hs_state:write_message(HState, <<>>),
-            case hs_send_msg(ComState, Msg) of
-                {ok, ComState1} ->
-                    do_handshake(HState1, ComState1, Timeout);
+            case hs_send_msg(ComCtx, Msg) of
+                {ok, ComCtx1} ->
+                    do_handshake(HState1, ComCtx1, Timeout);
                 {error, _} = Err ->
                     Err
             end;
         done ->
             {ok, Res} = enoise_hs_state:finalize(HState),
-            {ok, Res, ComState}
+            {ok, Res, ComCtx}
     end.
 
--spec hs_recv_msg(noise_com_state(), timeout()) ->
-    result({ok, binary(), noise_com_state()}).
+-spec hs_recv_msg(noise_com_context(), timeout()) ->
+    result({ok, binary(), noise_com_context()}).
 hs_recv_msg(CS = #{recv_msg := Recv, state := S}, Timeout) ->
     case Recv(S, Timeout) of
         {ok, Data, S1}   -> {ok, Data, CS#{state := S1}};
         {error, _} = Err -> Err
     end.
 
--spec hs_send_msg(noise_com_state(), binary()) ->
-    result({ok, noise_com_state()}).
+-spec hs_send_msg(noise_com_context(), binary()) ->
+    result({ok, noise_com_context()}).
 hs_send_msg(CS = #{send_msg := Send, state := S}, Data) ->
     case Send(S, Data) of
         {ok, S1}         -> {ok, CS#{state := S1}};
@@ -255,28 +265,15 @@ hs_send_msg(CS = #{send_msg := Send, state := S}, Data) ->
 
 %% -- gen_tcp specific functions ----------------------------------------------
 
-tcp_handshake(TcpSock, Role, Options) ->
-    case check_socket(TcpSock) of
-        ok ->
-            {ok, [{active, Active}]} = inet:getopts(TcpSock, [active]),
-            do_tcp_handshake(Options, Role, TcpSock, Active);
-        {error, _} = Err ->
-            Err
-    end.
-
-do_tcp_handshake(Options, Role, TcpSock, Active) ->
-    ComState = #{ recv_msg => fun gen_tcp_rcv_msg/2,
-                  send_msg => fun gen_tcp_snd_msg/2,
-                  state    => {TcpSock, Active, <<>>} },
-    case handshake(Options, Role, ComState) of
-        {ok, #{rx := Rx, tx := Tx, final_state := FState}, #{state := {_, _, Buf}}} ->
-            case enoise_connection:start_link(TcpSock, Rx, Tx, self(), {Active, Buf}) of
-                {ok, Conn} -> {ok, Conn, FState};
-                {error, _} = Err -> Err
-            end;
-        {error, _} = Err ->
-            Err
-    end.
+-spec build_tcp_com_context(gen_tcp:socket()) -> noise_com_context().
+build_tcp_com_context(TcpSock) ->
+    {ok, [{active, Active}]} = inet:getopts(TcpSock, [active]),
+    ok = gen_tcp:controlling_process(TcpSock, self()),
+    #{
+        recv_msg => fun gen_tcp_rcv_msg/2,
+        send_msg => fun gen_tcp_snd_msg/2,
+        state    => {TcpSock, Active, <<>>}
+    }.
 
 -spec check_socket(gen_tcp:socket()) -> result(ok).
 check_socket(TcpSock) ->
@@ -291,7 +288,7 @@ check_socket(TcpSock) ->
                     andalso (Active == true orelse Active == once)
                     andalso Header == 0 andalso PSize == 0 andalso Mode == binary of
                 true ->
-                    gen_tcp:controlling_process(TcpSock, self());
+                    ok;
                 false ->
                     {error, {invalid_tcp_options, TcpOpts}}
             end;
@@ -299,6 +296,8 @@ check_socket(TcpSock) ->
             Err
     end.
 
+-spec gen_tcp_snd_msg(com_state(), binary()) ->
+    result({ok, com_state()}).
 gen_tcp_snd_msg(S = {TcpSock, _, _}, Msg) ->
     Len = byte_size(Msg),
     case gen_tcp:send(TcpSock, <<Len:16, Msg/binary>>) of
@@ -306,6 +305,8 @@ gen_tcp_snd_msg(S = {TcpSock, _, _}, Msg) ->
         {error, _} = Err -> Err
     end.
 
+-spec gen_tcp_rcv_msg(com_state(), timeout()) ->
+    result({ok, binary(), com_state()}).
 gen_tcp_rcv_msg({TcpSock, Active, Buf}, Timeout) ->
     receive {tcp, TcpSock, Data} ->
         %% Immediately re-set {active, once}
