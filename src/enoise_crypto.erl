@@ -1,10 +1,8 @@
-%%% ------------------------------------------------------------------
-%%% @copyright 2018, Aeternity Anstalt
-%%%
-%%% @doc Module implementing crypto primitives needed by Noise protocol
-%%%
-%%% @end
-%%% ------------------------------------------------------------------
+%% ----------------------------------------------------------------------------
+%% @doc Module implementing crypto primitives needed by Noise protocol
+%%
+%% @end
+%% ----------------------------------------------------------------------------
 
 -module(enoise_crypto).
 
@@ -31,6 +29,7 @@
     noise_dh/0,
     noise_cipher/0,
     noise_hash/0,
+    noise_key/0,
     nonce/0
 ]).
 
@@ -43,6 +42,7 @@
 -type noise_dh()     :: dh25519 | dh448.
 -type noise_hash()   :: sha256 | sha512 | blake2s | blake2b.
 -type nonce()        :: non_neg_integer().
+-type noise_key()    :: binary().
 -type keypair()      :: enoise_keypair:keypair().
 
 %%-- API ----------------------------------------------------------------------
@@ -69,7 +69,7 @@ dh(Key1, Key2) ->
 %% @doc hash-based message authentication code
 %% Key - secret key for parties
 %% @end
--spec hmac(noise_hash(), binary(), binary()) -> binary().
+-spec hmac(noise_hash(), noise_key(), binary()) -> binary().
 hmac(Hash, Key, Data) ->
     BLen = blocklen(Hash),
     Block1 = hmac_format_key(Hash, Key, ?HMAC_INNER_MAGIC, BLen),
@@ -79,7 +79,7 @@ hmac(Hash, Key, Data) ->
 
 %% @doc HMAC key derivation function
 %% @end
--spec hkdf(noise_hash(), binary(), binary()) -> [binary()].
+-spec hkdf(noise_hash(), noise_key(), binary()) -> [binary()].
 hkdf(Hash, Key, Data) ->
     TempKey = hmac(Hash, Key, Data),
     Output1 = hmac(Hash, TempKey, <<1:8>>),
@@ -87,22 +87,22 @@ hkdf(Hash, Key, Data) ->
     Output3 = hmac(Hash, TempKey, <<Output2/binary, 3:8>>),
     [Output1, Output2, Output3].
 
--spec rekey(noise_cipher(), binary()) -> binary() | {error, term()}.
-rekey('ChaChaPoly' = Cipher, K0) ->
-    KLen = enacl:aead_chacha20poly1305_ietf_KEYBYTES(),
-    <<K:KLen/binary, _/binary>> = encrypt(Cipher, K0, ?MAX_NONCE, <<>>, <<0:256>>),
-    K;
-rekey(Cipher, K) ->
-    encrypt(Cipher, K, ?MAX_NONCE, <<>>, <<0:256>>).
+%% @doc Generate new session key
+-spec rekey(noise_cipher(), noise_key()) -> noise_key().
+rekey(Cipher, K0) ->
+    <<K:256/binary-unit:1, _/binary>> = encrypt(Cipher, K0, ?MAX_NONCE, <<>>, <<0:256>>),
+    K.
 
--spec pubkey_from_secret(noise_dh(), binary()) -> binary().
+%% @doc Restore public key from a secret
+-spec pubkey_from_secret(noise_dh(), noise_key()) -> noise_key().
 pubkey_from_secret(dh25519, Secret) ->
     enacl:curve25519_scalarmult_base(Secret);
 pubkey_from_secret(dh448, Secret) ->
     {PK, _SK} = crypto:generate_key(ecdh, x448, Secret),
     PK.
 
--spec new_key_pair(noise_dh()) -> #{public := binary(), secret := binary()}.
+%% @doc Generate new key pair
+-spec new_key_pair(noise_dh()) -> #{public := noise_key(), secret := noise_key()}.
 new_key_pair(dh25519) ->
     #{public := PK, secret := SK} = enacl:crypto_sign_ed25519_keypair(),
     #{secret => enacl:crypto_sign_ed25519_secret_to_curve25519(SK),
@@ -115,7 +115,7 @@ new_key_pair(Type) ->
 
 %%
 
--spec encrypt(noise_cipher(), Key :: binary(), nonce(), Ad :: binary(), PlainText :: binary()) ->
+-spec encrypt(noise_cipher(), noise_key(), nonce(), Ad :: binary(), PlainText :: binary()) ->
     binary().
 encrypt('ChaChaPoly', K, N, Ad, PlainText) ->
     Nonce = <<0:32, N:64/little-unsigned-integer>>,
@@ -127,7 +127,7 @@ encrypt('AESGCM', K, N, Ad, PlainText) ->
     ),
     <<CipherText/binary, CipherTag/binary>>.
 
--spec decrypt(noise_cipher(), Key :: binary(), nonce(), Ad :: binary(), CipherText :: binary()) ->
+-spec decrypt(noise_cipher(), noise_key(), nonce(), Ad :: binary(), CipherText :: binary()) ->
     binary() | {error, term()}.
 decrypt('ChaChaPoly', K, N, Ad, CipherText) ->
     Nonce = <<0:32, N:64/little-unsigned-integer>>,
@@ -183,7 +183,7 @@ dhlen(dh448)   -> 56.
 
 %%-- internals ----------------------------------------------------------------
 
--spec hmac_format_key(noise_hash(), binary(), byte(), pos_integer()) -> binary().
+-spec hmac_format_key(noise_hash(), noise_key(), byte(), pos_integer()) -> binary().
 hmac_format_key(Hash, Key0, Pad, BLen) ->
     Key1 = case byte_size(Key0) =< BLen of
         true  -> Key0;

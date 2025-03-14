@@ -1,6 +1,4 @@
 %%-----------------------------------------------------------------------------
-%% @copyright 2018, Aeternity Anstalt
-%%
 %% @doc Module encapsulating a Noise Cipher state
 %%
 %% A CipherState object contains k and n variables, which it uses to
@@ -31,7 +29,7 @@
 
 -type noise_cipher() :: enoise_crypto:noise_cipher().
 -type nonce()        :: enoise_crypto:nonce().
--type key()          :: empty | binary().
+-type key()          :: empty | enoise_crypto:noise_key().
 
 -record(noise_cs, {
     k      :: key(),
@@ -70,7 +68,7 @@ rekey(CState = #noise_cs{k = K, cipher = Cipher}) ->
     }.
 
 -spec set_nonce(state(), nonce()) -> state().
-set_nonce(CState = #noise_cs{}, Nonce) ->
+set_nonce(CState, Nonce) ->
     CState#noise_cs{n = Nonce}.
 
 %%
@@ -91,6 +89,6 @@ decrypt_with_ad(CState = #noise_cs{k = K, n = N, cipher = Cipher}, AD, CipherTex
     case enoise_crypto:decrypt(Cipher, K, N, AD, CipherText) of
         PlainText when is_binary(PlainText) ->
             {ok, CState#noise_cs{n = N + 1}, PlainText};
-        Err = {error, _} ->
+        {error, _} = Err ->
             Err
     end.

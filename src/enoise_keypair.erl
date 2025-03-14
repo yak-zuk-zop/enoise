@@ -1,10 +1,8 @@
-%%% ------------------------------------------------------------------
-%%% @copyright 2018, Aeternity Anstalt
-%%%
-%%% @doc Module is an abstract data type for a key pair.
-%%%
-%%% @end
-%%% ------------------------------------------------------------------
+%% ----------------------------------------------------------------------------
+%% @doc Module is an abstract data type for a key pair.
+%%
+%% @end
+%% ----------------------------------------------------------------------------
 
 -module(enoise_keypair).
 
@@ -17,12 +15,13 @@
     keytype/1
 ]).
 
--type key_type() :: enoise_crypto:noise_dh().
+-type key_type()  :: enoise_crypto:noise_dh().
+-type noise_key() :: enoise_crypto:noise_key().
 
 -record(kp, {
     type :: key_type(),
-    sec  :: binary() | undefined,
-    pub  :: binary()
+    sec  :: noise_key() | undefined,
+    pub  :: noise_key()
 }).
 
 -opaque keypair() :: #kp{}.
@@ -43,8 +42,8 @@ new(Type) ->
 %% it will be computed from the `Secret' (using the curve/algorithm
 %% indicated by `Type').
 -spec new(Type :: key_type(),
-          Secret :: binary() | undefined,
-          Public :: binary() | undefined) -> keypair().
+          Secret :: noise_key() | undefined,
+          Public :: noise_key() | undefined) -> keypair().
 new(Type, Secret, undefined) when Secret =/= undefined ->
     new(Type, Secret, enoise_crypto:pubkey_from_secret(Type, Secret));
 new(Type, Secret, Public) ->
@@ -52,7 +51,7 @@ new(Type, Secret, Public) ->
 
 %% @doc Define a "public only" keypair - holding just a public key and
 %% `undefined' for secret key.
--spec new(Type :: key_type(), Public :: binary()) -> keypair().
+-spec new(key_type(), noise_key()) -> keypair().
 new(Type, Public) ->
     #kp{type = Type, sec = undefined, pub = Public}.
 
@@ -62,11 +61,11 @@ new(Type, Public) ->
 keytype(#kp{type = T}) ->
     T.
 
--spec pubkey(keypair()) -> binary().
+-spec pubkey(keypair()) -> noise_key().
 pubkey(#kp{pub = P}) ->
     P.
 
--spec seckey(keypair()) -> binary().
+-spec seckey(keypair()) -> noise_key().
 seckey(#kp{sec = undefined}) ->
     error(keypair_is_public_only);
 seckey(#kp{sec = S}) ->

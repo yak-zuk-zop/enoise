@@ -3,11 +3,13 @@
 -export([
     start/4,
     stop/1,
-    need_rs/2,
+    build_enoise_options/4,
     wait_server_result/1,
     expected_reply/1
 ]).
 
+-type keypair() :: enoise_keypair:keypair().
+-type role() :: enoise_hs_state:noise_role().
 -type server_opts() :: [
     {echos, pos_integer()} |
     {recipient, pid()} |
@@ -19,7 +21,7 @@
 
 %%-- API ----------------------------------------------------------------------
 
--spec start(inet:port_number(), protocol(), enoise_keypair:keypair(), server_opts()) -> pid().
+-spec start(inet:port_number(), protocol(), keypair(), server_opts()) -> pid().
 start(Port, Protocol, SrvKP, Opts) ->
     spawn(fun() -> echo_srv(Port, Protocol, SrvKP, Opts) end).
 
@@ -27,12 +29,9 @@ start(Port, Protocol, SrvKP, Opts) ->
 stop(Pid) ->
     erlang:exit(Pid, kill).
 
--spec need_rs(enoise_hs_state:noise_role(), protocol()) -> boolean().
-need_rs(Role, Name) when is_binary(Name) ->
-    need_rs(Role, enoise_protocol:from_name(Name));
-need_rs(Role, Protocol) ->
-    PreMsgs = enoise_protocol:pre_msgs(Role, Protocol),
-    lists:member({in, [s]}, PreMsgs).
+-spec build_enoise_options(protocol(), role(), keypair(), keypair()) -> enoise:noise_options().
+build_enoise_options(Protocol, Role, KP, RemotePubKey) ->
+    [{noise, Protocol}, {role, Role}, {s, KP} | [{rs, RemotePubKey} || need_rs(Role, Protocol)]].
 
 -spec wait_server_result(pid()) -> {ok, any()} | {error, timeout}.
 wait_server_result(SrvPid) ->
@@ -42,7 +41,7 @@ wait_server_result(SrvPid) ->
         {error, timeout}
     end.
 
--spec expected_reply(enoise_connection:t()) -> {ok, any()} | {error, timeout}.
+-spec expected_reply(enoise_connection:t()) -> {ok, binary()} | {error, timeout}.
 expected_reply(EConn) ->
     receive {reply, EConn, Msg} ->
         {ok, Msg}
@@ -58,10 +57,10 @@ echo_srv(Port, Protocol, SrvKP, SrvOpts) ->
     {ok, LSock} = gen_tcp:listen(Port, TcpOpts),
     {ok, TcpSock} = gen_tcp:accept(LSock, 500),
 
-    Opts = [{noise, Protocol}, {s, SrvKP} |
-           [{rs, proplists:get_value(cpub, SrvOpts)} || need_rs(responder, Protocol)]],
+    CliPubKey = proplists:get_value(cpub, SrvOpts),
+    Opts = build_enoise_options(Protocol, responder, SrvKP, CliPubKey),
 
-    Res = case enoise:accept(TcpSock, Opts) of
+    Res = case enoise:init(TcpSock, Opts) of
         {ok, EConn, _}   ->
             Res0 = echo_srv_loop(EConn, SrvOpts),
             ok = enoise:close(EConn),
@@ -70,7 +69,7 @@ echo_srv(Port, Protocol, SrvKP, SrvOpts) ->
             Err
     end,
 
-    ok = srv_reply(Res, SrvOpts),
+    ok = maybe_srv_reply(Res, SrvOpts),
 
     gen_tcp:close(TcpSock),
     gen_tcp:close(LSock).
@@ -86,8 +85,8 @@ echo_srv_loop(EConn, SrvOpts) ->
         {error, R}
     end.
 
--spec srv_reply(ok | {error, term()}, server_opts()) -> ok.
-srv_reply(Reply, SrvOpts) ->
+-spec maybe_srv_reply(ok | {error, term()}, server_opts()) -> ok.
+maybe_srv_reply(Reply, SrvOpts) ->
     case proplists:get_value(recipient, SrvOpts, undefined) of
         undefined -> ok;
         Pid       -> Pid ! {server_result, self(), Reply}, ok
@@ -108,3 +107,10 @@ build_recv_fun(SrvOpts) ->
             %    Data
             %end
     end.
+
+-spec need_rs(role(), protocol()) -> boolean().
+need_rs(Role, Name) when is_binary(Name) ->
+    need_rs(Role, enoise_protocol:from_name(Name));
+need_rs(Role, Protocol) ->
+    PreMsgs = enoise_protocol:pre_msgs(Role, Protocol),
+    lists:member({in, [s]}, PreMsgs).
