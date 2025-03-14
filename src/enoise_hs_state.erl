@@ -1,6 +1,4 @@
-%% ------------------------------------------------------------------
-%% @copyright 2018, Aeternity Anstalt
-%%
+%% ----------------------------------------------------------------------------
 %% @doc Module encapsulating a Noise handshake state
 %%
 %% A HandshakeState object contains a SymmetricState plus DH variables (s, e, rs, re)
@@ -13,13 +11,14 @@
 %% re - remote party's ephemeral public key
 %%
 %% @end
-%% ------------------------------------------------------------------
+%% ----------------------------------------------------------------------------
 
 -module(enoise_hs_state).
 
 -export([
     init/4,
     finalize/1,
+    remote_keys/1,
     next_message/1,
     read_message/2,
     write_message/2
@@ -33,6 +32,12 @@
     tx := enoise_cipher_state:state(),
     hs_hash := binary(),
     final_state => state()
+}.
+-type initial_keypairs() :: {
+    keypair() | undefined,
+    keypair() | undefined,
+    keypair() | undefined,
+    keypair() | undefined
 }.
 
 -record(noise_hs, {
@@ -58,7 +63,7 @@
 
 -spec init(Protocol :: enoise_protocol:protocol(),
            Role :: noise_role(), Prologue :: binary(),
-           Keys :: tuple()) -> state().
+           Keys :: initial_keypairs()) -> state().
 init(Protocol, Role, Prologue, {S, E, RS, RE}) ->
     SS0 = enoise_sym_state:init(Protocol),
     SS1 = enoise_sym_state:mix_hash(SS0, Prologue),
@@ -107,6 +112,10 @@ read_message(HS = #noise_hs{msgs = [{in, Tokens} | Msgs]}, Message) ->
         {ok, HS1, RestBuf1}  -> decrypt_and_hash(HS1, RestBuf1);
         {error, _} = Err -> Err
     end.
+
+-spec remote_keys(state()) -> keypair().
+remote_keys(#noise_hs{rs = RS}) ->
+    RS.
 
 %%-- internals ----------------------------------------------------------------
 
