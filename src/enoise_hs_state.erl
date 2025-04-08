@@ -90,18 +90,21 @@ finalize(HS = #noise_hs{msgs = [], ss = SS, role = Role}) ->
         initiator -> {ok, Final#{tx => C1, rx => C2}};
         responder -> {ok, Final#{rx => C1, tx => C2}}
     end;
-finalize(_) ->
-    error({bad_state, finalize}).
+finalize(HS) ->
+    error({expected, next_message(HS)}).
 
 -spec next_message(state()) -> in | out | done.
 next_message(#noise_hs{msgs = [{Dir, _} | _]}) -> Dir;
 next_message(#noise_hs{}) -> done.
 
--spec write_message(state(), PayLoad :: binary()) -> {ok, state(), binary()}.
+-spec write_message(state(), PayLoad :: binary()) ->
+    {ok, state(), binary()} | {error, term()}.
 write_message(HS = #noise_hs{msgs = [{out, Msg} | Msgs]}, PayLoad) ->
     {HS1, MsgBuf1} = write_message(HS#noise_hs{msgs = Msgs}, Msg, <<>>),
     {ok, HS2, MsgBuf2} = encrypt_and_hash(HS1, PayLoad),
-    {ok, HS2, <<MsgBuf1/binary, MsgBuf2/binary>>}.
+    {ok, HS2, <<MsgBuf1/binary, MsgBuf2/binary>>};
+write_message(HS, _) ->
+    {error, {expected, next_message(HS)}}.
 
 %%
 
@@ -111,7 +114,9 @@ read_message(HS = #noise_hs{msgs = [{in, Tokens} | Msgs]}, Message) ->
     case read_message(HS#noise_hs{msgs = Msgs}, Tokens, Message) of
         {ok, HS1, RestBuf1}  -> decrypt_and_hash(HS1, RestBuf1);
         {error, _} = Err -> Err
-    end.
+    end;
+read_message(HS, _) ->
+    {error, {expected, next_message(HS)}}.
 
 -spec remote_keys(state()) -> keypair().
 remote_keys(#noise_hs{rs = RS}) ->

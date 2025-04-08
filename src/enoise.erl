@@ -193,8 +193,12 @@ step_handshake(HState, Data) ->
                     Err
             end;
         {out, {send, Payload}} ->
-            {ok, HState1, Msg} = enoise_hs_state:write_message(HState, Payload),
-            {ok, send, Msg, HState1};
+            case enoise_hs_state:write_message(HState, Payload) of
+                {ok, HState1, Msg} ->
+                    {ok, send, Msg, HState1};
+                {error, _} = Err ->
+                    Err
+            end;
         {done, done} ->
             {ok, Res} = enoise_hs_state:finalize(HState),
             {ok, done, Res};
