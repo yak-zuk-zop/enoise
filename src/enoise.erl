@@ -41,6 +41,7 @@
                       | {re, noise_key()}
                       | {rs, noise_key()}
                       | {prologue, binary()} %% Optional
+                      | {psk, noise_key()}   %% Optional
                       | {timeout, timeout()}.%% Optional
 
 -type noise_protocol() :: enoise_protocol:protocol() | string() | binary().
@@ -155,6 +156,7 @@ create_hstate(Options) ->
     Prologue = proplists:get_value(prologue, Options, <<>>),
     Proto    = proplists:get_value(noise, Options),
     Role     = proplists:get_value(role, Options),
+    PSK      = proplists:get_value(psk, Options, undefined),
 
     Protocol = case Proto of
         X when is_binary(X); is_list(X) ->
@@ -168,7 +170,7 @@ create_hstate(Options) ->
     RS = proplists:get_value(rs, Options, undefined),
     RE = proplists:get_value(re, Options, undefined),
 
-    enoise_hs_state:init(Protocol, Role, Prologue, {S, E, RS, RE}).
+    enoise_hs_state:init(Protocol, Role, Prologue, {S, E, RS, RE}, PSK).
 
 %% @doc Perform a handshake step.
 %% Data possible values:

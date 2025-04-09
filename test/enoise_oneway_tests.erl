@@ -20,14 +20,15 @@ oneway_handshake_test_() ->
 
 test_handshake(Protocol, Init, Resp, Messages, HSHash) ->
     DH = enoise_protocol:dh(Protocol),
-    HSInit = fun(#{e := E, s := S, rs := RS, prologue := PL}, R) ->
+    HSInit = fun(#{e := E, s := S, rs := RS, prologue := PL, psk := PSK}, R) ->
         Opts = [
             {noise, Protocol},
             {role, R},
             {s, test_utils:maybe_new_keypair(DH, {secret, S})},
             {e, test_utils:maybe_new_keypair(DH, {secret, E})},
             {rs, test_utils:maybe_new_keypair(DH, {public, RS})},
-            {prologue, PL}
+            {prologue, PL},
+            {psk, PSK}
         ],
         enoise:create_hstate(Opts)
     end,

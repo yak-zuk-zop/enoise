@@ -65,11 +65,13 @@ init_hs_test(V = #{protocol_name := Name}, TestFun) ->
     Init = #{ prologue => FixK(maps:get(init_prologue, V, <<>>))
             , e        => FixK(maps:get(init_ephemeral, V, undefined))
             , s        => FixK(maps:get(init_static, V, undefined))
-            , rs       => FixK(maps:get(init_remote_static, V, undefined))},
+            , rs       => FixK(maps:get(init_remote_static, V, undefined))
+            , psk      => FixK(maps:get(init_psk, V, undefined))},
     Resp = #{ prologue => FixK(maps:get(resp_prologue, V, <<>>))
             , e        => FixK(maps:get(resp_ephemeral, V, undefined))
             , s        => FixK(maps:get(resp_static, V, undefined))
-            , rs       => FixK(maps:get(resp_remote_static, V, undefined))},
+            , rs       => FixK(maps:get(resp_remote_static, V, undefined))
+            , psk      => FixK(maps:get(resp_psk, V, undefined))},
     Messages = maps:get(messages, V),
     HandshakeHash = maps:get(handshake_hash, V),
 

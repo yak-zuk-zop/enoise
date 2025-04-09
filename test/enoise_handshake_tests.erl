@@ -48,7 +48,7 @@ setup_dh(DH) ->
     CliKeyPair = enoise_keypair:new(DH),
 
     #{hs_pattern := Ps, hash := Hs, cipher := Cs} = enoise_protocol:supported(),
-    Protocols = [enoise_protocol:to_name(P, DH, C, H) || P <- Ps, C <- Cs, H <- Hs],
+    Protocols = [enoise_protocol:to_name(P, DH, C, H) || P <- Ps, C <- Cs, H <- Hs, P =/= nn_psk0],
     {Protocols, SrvKeyPair, CliKeyPair}.
 
 %%-- tests --------------------------------------------------------------------
@@ -108,14 +108,15 @@ bad_handshake_test() ->
 
 noise_interactive(Protocol, Init, Resp, Messages, HSHash) ->
     DH = enoise_protocol:dh(Protocol),
-    HSInit = fun(#{e := E, s := S, rs := RS, prologue := PL}, R) ->
+    HSInit = fun(#{e := E, s := S, rs := RS, prologue := PL, psk := PSK}, R) ->
         Opts = [
             {noise, Protocol},
             {role, R},
             {s, test_utils:maybe_new_keypair(DH, {secret, S})},
             {e, test_utils:maybe_new_keypair(DH, {secret, E})},
             {rs, test_utils:maybe_new_keypair(DH, {public, RS})},
-            {prologue, PL}
+            {prologue, PL},
+            {psk, PSK}
         ],
         enoise:create_hstate(Opts)
     end,

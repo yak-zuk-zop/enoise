@@ -27,11 +27,11 @@
 -type noise_cipher() :: enoise_crypto:noise_cipher().
 -type noise_hash() :: enoise_crypto:noise_hash().
 -type noise_pattern() ::
-    nn | kn | k1n | nk | nk1 | kk | k1k | kk1 | k1k1 | nx | nx1 | kx | k1x | kx1 | k1x1 |
+    nn | nn_psk0 | kn | k1n | nk | nk1 | kk | k1k | kk1 | k1k1 | nx | nx1 | kx | k1x | kx1 | k1x1 |
     xn | x1n | in | i1n | xk | x1k | xk1 | x1k1 | ik | i1k | ik1 | i1k1 |
     xx | xx1 | x1x | x1x1 | ix | i1x | ix1 | i1x1 |
     n | k | x.
--type noise_token() :: s | e | ee | ss | es | se. % TODO: add psk
+-type noise_token() :: s | e | ee | ss | es | se | psk.
 -type noise_msg()     :: {in | out, [noise_token()]}.
 
 -record(noise_protocol, {
@@ -165,6 +165,8 @@ role_adapt(responder, Msgs) ->
 %% Interactive handshake patterns
 protocol(nn) ->
     {[], [{out, [e]}, {in, [e, ee]}]};
+protocol(nn_psk0) ->
+    {[], [{out, [psk, e]}, {in, [e, ee]}]};
 protocol(kn) ->
     {[{out, [s]}], [{out, [e]}, {in, [e, ee, se]}]};
 protocol(k1n) ->
@@ -261,7 +263,7 @@ is_supported(#noise_protocol{hs_pattern = Pattern, dh = Dh, cipher = Cipher, has
 supported() ->
     #{
         hs_pattern => [
-            nn, kn, k1n, nk, nk1, kk, k1k, kk1, k1k1, nx, nx1, kx, k1x, kx1, k1x1,
+            nn, nn_psk0, kn, k1n, nk, nk1, kk, k1k, kk1, k1k1, nx, nx1, kx, k1x, kx1, k1x1,
             xn, x1n, in, i1n, xk, x1k, xk1, x1k1, ik, i1k, ik1, i1k1, xx, xx1, x1x, x1x1,
             ix, i1x, ix1, i1x1, n, k, x
         ],
