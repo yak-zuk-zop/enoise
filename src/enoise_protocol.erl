@@ -34,7 +34,7 @@
     n | k | x.
 -type noise_token() :: s | e | ee | ss | es | se | psk.
 -type noise_msg()     :: {in | out, [noise_token()]}.
--type noise_modifier() :: psk0.
+-type noise_modifier() :: psk0 | psk1 | psk2 | psk3.
 
 -record(noise_protocol, {
     hs_pattern :: noise_pattern(),
@@ -253,7 +253,16 @@ modifiers([], Msgs) ->
     Msgs;
 modifiers([psk0 | Rest], [{Dir, Tokens} | Msgs]) ->
     Upd = {Dir, [psk | Tokens]},
-    modifiers(Rest, [Upd | Msgs]).
+    modifiers(Rest, [Upd | Msgs]);
+modifiers([psk1 | Rest], [{Dir, Tokens} | Msgs]) ->
+    Upd = {Dir, Tokens ++ [psk]},
+    modifiers(Rest, [Upd | Msgs]);
+modifiers([psk2 | Rest], [Msg1, {Dir, Tokens} | Msgs]) ->
+    Upd = {Dir, Tokens ++ [psk]},
+    modifiers(Rest, [Msg1, Upd | Msgs]);
+modifiers([psk3 | Rest], [Msg1, Msg2, {Dir, Tokens} | Msgs]) ->
+    Upd = {Dir, Tokens ++ [psk]},
+    modifiers(Rest, [Msg1, Msg2, Upd | Msgs]).
 
 %%
 
@@ -281,7 +290,7 @@ supported() ->
             xn, x1n, in, i1n, xk, x1k, xk1, x1k1, ik, i1k, ik1, i1k1, xx, xx1, x1x, x1x1,
             ix, i1x, ix1, i1x1, n, k, x
         ],
-        modifiers  => [psk0],
+        modifiers  => [psk0, psk1, psk2, psk3],
         hash       => [blake2b, blake2s, sha256, sha512],
         cipher     => ['ChaChaPoly', 'AESGCM'],
         dh         => [dh25519, dh448]
