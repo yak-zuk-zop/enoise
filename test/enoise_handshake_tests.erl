@@ -48,7 +48,7 @@ setup_dh(DH) ->
     CliKeyPair = enoise_keypair:new(DH),
 
     #{hs_pattern := Ps, hash := Hs, cipher := Cs} = enoise_protocol:supported(),
-    Protocols = [enoise_protocol:to_name(P, DH, C, H) || P <- Ps, C <- Cs, H <- Hs, P =/= nn_psk0],
+    Protocols = [enoise_protocol:to_name(P, DH, C, H) || P <- Ps, C <- Cs, H <- Hs],
     {Protocols, SrvKeyPair, CliKeyPair}.
 
 %%-- tests --------------------------------------------------------------------
