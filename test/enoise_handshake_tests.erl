@@ -10,12 +10,12 @@
 
 %%-- fixtures -----------------------------------------------------------------
 
--spec noise_interactive_test_() -> _.
-noise_interactive_test_() ->
+-spec vectors_test_() -> _.
+vectors_test_() ->
     {setup,
-        fun() -> test_utils:noise_test_vectors(fun test_utils:protocol_filter_interactive/1) end,
+        fun() -> test_utils:load_test_vectors("test_vectors.txt") end,
         fun(Tests) ->
-            TestCaseFun = fun(T) -> test_utils:init_hs_test(T, fun noise_interactive/5) end,
+            TestCaseFun = fun(T) -> test_utils:init_hs_test(T, fun test_handshake/5) end,
             [{maps:get(protocol_name, T), {with, T, [TestCaseFun]}} || T <- Tests]
         end
     }.
@@ -106,25 +106,26 @@ bad_handshake_test() ->
 
 %%
 
-noise_interactive(Protocol, Init, Resp, Messages, HSHash) ->
+test_handshake(Protocol, Init, Resp, Messages, HSHash) ->
     DH = enoise_protocol:dh(Protocol),
-    HSInit = fun(#{e := E, s := S, rs := RS, prologue := PL}, R) ->
+    HSInit = fun(#{e := E, s := S, rs := RS, prologue := PL, psk := PSK}, R) ->
         Opts = [
             {noise, Protocol},
             {role, R},
             {s, test_utils:maybe_new_keypair(DH, {secret, S})},
             {e, test_utils:maybe_new_keypair(DH, {secret, E})},
             {rs, test_utils:maybe_new_keypair(DH, {public, RS})},
-            {prologue, PL}
+            {prologue, PL},
+            {psk, PSK}
         ],
         enoise:create_hstate(Opts)
     end,
     InitHS = HSInit(Init, initiator),
     RespHS = HSInit(Resp, responder),
 
-    noise_interactive(Messages, InitHS, RespHS, HSHash).
+    test_handshake(Messages, InitHS, RespHS, HSHash).
 
-noise_interactive([#{payload := PL0, ciphertext := CT0} | Msgs], SendHS, RecvHS, HSHash) ->
+test_handshake([#{payload := PL0, ciphertext := CT0} | Msgs], SendHS, RecvHS, HSHash) ->
     PL = test_utils:hex2bin(<<$0, $x, PL0/binary>>),
     CT = test_utils:hex2bin(<<$0, $x, CT0/binary>>),
     case enoise_hs_state:next_message(SendHS) of
@@ -133,7 +134,7 @@ noise_interactive([#{payload := PL0, ciphertext := CT0} | Msgs], SendHS, RecvHS,
             ?assertEqual(CT, Message),
             {ok, rcvd, PL1, RecvHS1} = enoise:step_handshake(RecvHS, {rcvd, Message}),
             ?assertEqual(PL, PL1),
-            noise_interactive(Msgs, RecvHS1, SendHS1, HSHash);
+            test_handshake(Msgs, RecvHS1, SendHS1, HSHash);
         done ->
             {ok, done, SenderSplitState} = enoise:step_handshake(SendHS, done),
             {ok, done, RecipientSplitState} = enoise:step_handshake(RecvHS, done),

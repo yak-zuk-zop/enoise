@@ -17,6 +17,7 @@
 
 -export([
     init/4,
+    init/5,
     finalize/1,
     remote_keys/1,
     next_message/1,
@@ -27,6 +28,7 @@
 -type noise_role()  :: initiator | responder.
 -type noise_token() :: enoise_protocol:noise_token().
 -type keypair()     :: enoise_keypair:keypair().
+-type noise_key()   :: enoise_crypto:noise_key().
 -type noise_split_state() :: #{
     rx := enoise_cipher_state:state(),
     tx := enoise_cipher_state:state(),
@@ -46,6 +48,7 @@
     e    :: keypair() | undefined,
     rs   :: keypair() | undefined,
     re   :: keypair() | undefined,
+    psk  :: noise_key() | undefined,
     role :: noise_role(),
     dh   :: enoise_crypto:noise_dh(),
     msgs :: [enoise_protocol:noise_msg()]
@@ -64,12 +67,20 @@
 -spec init(Protocol :: enoise_protocol:protocol(),
            Role :: noise_role(), Prologue :: binary(),
            Keys :: initial_keypairs()) -> state().
-init(Protocol, Role, Prologue, {S, E, RS, RE}) ->
+init(Protocol, Role, Prologue, Keys) ->
+    init(Protocol, Role, Prologue, Keys, undefined).
+
+-spec init(Protocol :: enoise_protocol:protocol(),
+           Role :: noise_role(), Prologue :: binary(),
+           Keys :: initial_keypairs(),
+           PSK  :: noise_key() | undefined) -> state().
+init(Protocol, Role, Prologue, {S, E, RS, RE}, PSK) ->
     SS0 = enoise_sym_state:init(Protocol),
     SS1 = enoise_sym_state:mix_hash(SS0, Prologue),
     HS = #noise_hs{
         ss = SS1,
         s = S, e = E, rs = RS, re = RE,
+        psk = PSK,
         role = Role,
         dh = enoise_protocol:dh(Protocol),
         msgs = enoise_protocol:msgs(Role, Protocol)
@@ -90,18 +101,21 @@ finalize(HS = #noise_hs{msgs = [], ss = SS, role = Role}) ->
         initiator -> {ok, Final#{tx => C1, rx => C2}};
         responder -> {ok, Final#{rx => C1, tx => C2}}
     end;
-finalize(_) ->
-    error({bad_state, finalize}).
+finalize(HS) ->
+    error({expected, next_message(HS)}).
 
 -spec next_message(state()) -> in | out | done.
 next_message(#noise_hs{msgs = [{Dir, _} | _]}) -> Dir;
 next_message(#noise_hs{}) -> done.
 
--spec write_message(state(), PayLoad :: binary()) -> {ok, state(), binary()}.
+-spec write_message(state(), PayLoad :: binary()) ->
+    {ok, state(), binary()} | {error, term()}.
 write_message(HS = #noise_hs{msgs = [{out, Msg} | Msgs]}, PayLoad) ->
     {HS1, MsgBuf1} = write_message(HS#noise_hs{msgs = Msgs}, Msg, <<>>),
     {ok, HS2, MsgBuf2} = encrypt_and_hash(HS1, PayLoad),
-    {ok, HS2, <<MsgBuf1/binary, MsgBuf2/binary>>}.
+    {ok, HS2, <<MsgBuf1/binary, MsgBuf2/binary>>};
+write_message(HS, _) ->
+    {error, {expected, next_message(HS)}}.
 
 %%
 
@@ -111,7 +125,9 @@ read_message(HS = #noise_hs{msgs = [{in, Tokens} | Msgs]}, Message) ->
     case read_message(HS#noise_hs{msgs = Msgs}, Tokens, Message) of
         {ok, HS1, RestBuf1}  -> decrypt_and_hash(HS1, RestBuf1);
         {error, _} = Err -> Err
-    end.
+    end;
+read_message(HS, _) ->
+    {error, {expected, next_message(HS)}}.
 
 -spec remote_keys(state()) -> keypair().
 remote_keys(#noise_hs{rs = RS}) ->
@@ -146,7 +162,8 @@ read_token(HS = #noise_hs{re = undefined, dh = DH}, Token = e, Data0) ->
     case Data0 of
         <<REPub:DHLen/binary, Data1/binary>> ->
             RE = enoise_keypair:new(DH, REPub),
-            {ok, mix_hash(HS#noise_hs{re = RE}, REPub), Data1};
+            HS2 = mix_hash(HS#noise_hs{re = RE}, REPub),
+            {ok, psk_maybe_mix_key(HS2, REPub), Data1};
         _ ->
             {error, {bad_data, {failed_to_read_token, Token, DHLen}}}
     end;
@@ -167,6 +184,8 @@ read_token(HS = #noise_hs{rs = undefined, dh = DH}, Token = s, Data0) ->
         _ ->
             {error, {bad_data, {failed_to_read_token, Token, DHLen}}}
     end;
+read_token(HS = #noise_hs{psk = PSK}, psk, Data) ->
+    {ok, mix_key_and_hash(HS, PSK), Data};
 read_token(HS, Token, Data) ->
     {ok, mix_key(HS, dh(dh_token(HS, Token))), Data}.
 
@@ -181,10 +200,13 @@ write_token(HS = #noise_hs{e = undefined, dh = DH}, e) ->
 %% Should only apply during test - TODO: secure this
 write_token(HS = #noise_hs{e = E}, e) ->
     PubE = enoise_keypair:pubkey(E),
-    {mix_hash(HS, PubE), PubE};
+    HS2 = mix_hash(HS, PubE),
+    {psk_maybe_mix_key(HS2, PubE), PubE};
 write_token(HS = #noise_hs{s = S}, s) ->
     {ok, HS1, Msg} = encrypt_and_hash(HS, enoise_keypair:pubkey(S)),
     {HS1, Msg};
+write_token(HS = #noise_hs{psk = PSK}, psk) ->
+    {mix_key_and_hash(HS, PSK), <<>>};
 write_token(HS, Token) ->
     {mix_key(HS, dh(dh_token(HS, Token))), <<>>}.
 
@@ -213,6 +235,16 @@ mix_key(HS = #noise_hs{ss = SS0}, Data) ->
 -spec mix_hash(state(), binary()) -> state().
 mix_hash(HS = #noise_hs{ss = SS0}, Data) ->
     HS#noise_hs{ss = enoise_sym_state:mix_hash(SS0, Data)}.
+
+-spec psk_maybe_mix_key(state(), binary()) -> state().
+psk_maybe_mix_key(HS = #noise_hs{psk = undefined}, _Data) ->
+    HS;
+psk_maybe_mix_key(HS, Data) ->
+    mix_key(HS, Data).
+
+-spec mix_key_and_hash(state(), binary()) -> state().
+mix_key_and_hash(HS = #noise_hs{ss = SS0}, Data) ->
+    HS#noise_hs{ss = enoise_sym_state:mix_key_and_hash(SS0, Data)}.
 
 -spec encrypt_and_hash(state(), PlainText :: binary()) ->
     {ok, state(), CipherText :: binary()}.
