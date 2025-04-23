@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2025-04-23
+
+### Added
+- modifiers psk0, psk1, psk2, psk3
+- handling invalid function calls (write_message, read_message, finalize)
+### Changed
+- reworked handshake state tests. now it tests it's api (not handshake patterns)
+### Fixed
+- one-way patterns
+
 ## [2.0.0] - 2025-03-14
 
 ### Added
@@ -95,6 +105,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  , dh         => [dh25519] }
 ```
 
+[2.1.0]: https://github.com/yak-zuk-zop/enoise/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/yak-zuk-zop/enoise/compare/v1.4.0...v2.0.0
 [1.4.0]: https://github.com/yak-zuk-zop/enoise/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/yak-zuk-zop/enoise/compare/v1.2.0...v1.3.0

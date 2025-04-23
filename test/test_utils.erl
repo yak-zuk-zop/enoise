@@ -11,10 +11,9 @@
 -export([
     cipher_data/1,
 
-    noise_test_vectors/1,
+    load_test_vectors/1,
+    load_test_vectors/2,
     protocol_filter_all/1,
-    protocol_filter_interactive/1,
-    protocol_filter_oneway/1,
 
     init_hs_test/2
 ]).
@@ -42,15 +41,6 @@ hex2bin(<<$0, $x, Rest/binary>>) ->
 protocol_filter_all(_) ->
     true.
 
--spec protocol_filter_interactive(protocol()) -> boolean().
-protocol_filter_interactive(Protocol) ->
-    not protocol_filter_oneway(Protocol).
-
--spec protocol_filter_oneway(protocol()) -> boolean().
-protocol_filter_oneway(Protocol) ->
-    Pattern = enoise_protocol:pattern(Protocol),
-    Pattern == n orelse Pattern == k orelse Pattern == x.
-
 %%
 
 -spec init_hs_test(map(), test_vector_fun()) -> ok.
@@ -65,11 +55,13 @@ init_hs_test(V = #{protocol_name := Name}, TestFun) ->
     Init = #{ prologue => FixK(maps:get(init_prologue, V, <<>>))
             , e        => FixK(maps:get(init_ephemeral, V, undefined))
             , s        => FixK(maps:get(init_static, V, undefined))
-            , rs       => FixK(maps:get(init_remote_static, V, undefined))},
+            , rs       => FixK(maps:get(init_remote_static, V, undefined))
+            , psk      => FixK(maps:get(init_psk, V, undefined))},
     Resp = #{ prologue => FixK(maps:get(resp_prologue, V, <<>>))
             , e        => FixK(maps:get(resp_ephemeral, V, undefined))
             , s        => FixK(maps:get(resp_static, V, undefined))
-            , rs       => FixK(maps:get(resp_remote_static, V, undefined))},
+            , rs       => FixK(maps:get(resp_remote_static, V, undefined))
+            , psk      => FixK(maps:get(resp_psk, V, undefined))},
     Messages = maps:get(messages, V),
     HandshakeHash = maps:get(handshake_hash, V),
 
@@ -136,11 +128,13 @@ cipher_data('AESGCM') ->
 
 %%
 
-%% Test vectors from
-%% https://raw.githubusercontent.com/rweather/noise-c/master/tests/vector/noise-c-basic.txt
--spec noise_test_vectors(protocol_filter()) -> [map()].
-noise_test_vectors(FilterFun) ->
-    noise_test_filter(parse_test_vectors("test/test_vectors.txt"), FilterFun).
+-spec load_test_vectors(string()) -> [map()].
+load_test_vectors(FName) ->
+    load_test_vectors(FName, fun protocol_filter_all/1).
+
+-spec load_test_vectors(string(), protocol_filter()) -> [map()].
+load_test_vectors(FName, FilterFun) ->
+    noise_test_filter(parse_test_vectors("test/" ++ FName), FilterFun).
 
 %% -- internals ---------------------------------------------------------------
 

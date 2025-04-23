@@ -19,9 +19,10 @@
     to_name/1
 ]).
 
--ifdef(TEST).
--export([to_name/4]).
--endif.
+-export([
+    to_name/4,
+    to_name/5
+]).
 
 -type noise_dh() :: enoise_crypto:noise_dh().
 -type noise_cipher() :: enoise_crypto:noise_cipher().
@@ -31,11 +32,13 @@
     xn | x1n | in | i1n | xk | x1k | xk1 | x1k1 | ik | i1k | ik1 | i1k1 |
     xx | xx1 | x1x | x1x1 | ix | i1x | ix1 | i1x1 |
     n | k | x.
--type noise_token() :: s | e | ee | ss | es | se. % TODO: add psk
+-type noise_token() :: s | e | ee | ss | es | se | psk.
 -type noise_msg()     :: {in | out, [noise_token()]}.
+-type noise_modifier() :: psk0 | psk1 | psk2 | psk3.
 
 -record(noise_protocol, {
     hs_pattern :: noise_pattern(),
+    modifiers  :: [noise_modifier()],
     dh         :: noise_dh(),
     cipher     :: noise_cipher(),
     hash       :: noise_hash()
@@ -46,6 +49,7 @@
 -export_type([
     noise_msg/0,
     noise_pattern/0,
+    noise_modifier/0,
     noise_token/0,
     protocol/0
 ]).
@@ -76,11 +80,12 @@ to_name(Protocol) ->
         true  ->
             #noise_protocol{
                 hs_pattern = Pattern,
+                modifiers = Mods,
                 dh = Dh,
                 cipher = Cipher,
                 hash = Hash
             } = Protocol,
-            to_name(Pattern, Dh, Cipher, Hash);
+            to_name(Pattern, Mods, Dh, Cipher, Hash);
         false ->
             error({protocol_not_recognized, Protocol})
     end.
@@ -91,8 +96,10 @@ from_name(Bin) when is_binary(Bin) ->
 from_name(String) ->
     case string:lexemes(String, "_") of
         ["Noise", PatStr, DhStr, CipStr, HashStr] ->
+            {Pattern, Mods} = from_name_pattern(PatStr),
             Protocol = #noise_protocol{
-                hs_pattern = from_name_pattern(PatStr),
+                hs_pattern = Pattern,
+                modifiers = Mods,
                 dh = from_name_dh(DhStr),
                 cipher = from_name_cipher(CipStr),
                 hash = from_name_hash(HashStr)
@@ -110,9 +117,9 @@ from_name(String) ->
 %%
 
 -spec msgs(enoise_hs_state:noise_role(), protocol()) -> [noise_msg()].
-msgs(Role, #noise_protocol{hs_pattern = Pattern}) ->
+msgs(Role, #noise_protocol{hs_pattern = Pattern, modifiers = Mods}) ->
     {_Pre, Msgs} = protocol(Pattern),
-    role_adapt(Role, Msgs).
+    role_adapt(Role, modifiers(Mods, Msgs)).
 
 -spec pre_msgs(enoise_hs_state:noise_role(), protocol()) -> [noise_msg()].
 pre_msgs(Role, #noise_protocol{hs_pattern = Pattern}) ->
@@ -235,25 +242,43 @@ protocol(i1x1) ->
     {[], [{out, [e, s]}, {in, [e, ee, s]}, {out, [se, es]}]};
 %% One-way handshake patterns
 protocol(n) ->
-    {[{out, [s]}], [{in, [e, se]}]};
+    {[{in, [s]}], [{out, [e, es]}]};
 protocol(k) ->
-    {[{in, [s]}, {out, [s]}], [{in, [e, se, ss]}]};
+    {[{out, [s]}, {in, [s]}], [{out, [e, es, ss]}]};
 protocol(x) ->
-    {[{out, [s]}], [{in, [e, se, s, ss]}]}.
+    {[{in, [s]}], [{out, [e, es, s, ss]}]}.
+
+-spec modifiers([noise_modifier()], [noise_msg()]) -> [noise_msg()].
+modifiers([], Msgs) ->
+    Msgs;
+modifiers([psk0 | Rest], [{Dir, Tokens} | Msgs]) ->
+    Upd = {Dir, [psk | Tokens]},
+    modifiers(Rest, [Upd | Msgs]);
+modifiers([psk1 | Rest], [{Dir, Tokens} | Msgs]) ->
+    Upd = {Dir, Tokens ++ [psk]},
+    modifiers(Rest, [Upd | Msgs]);
+modifiers([psk2 | Rest], [Msg1, {Dir, Tokens} | Msgs]) ->
+    Upd = {Dir, Tokens ++ [psk]},
+    modifiers(Rest, [Msg1, Upd | Msgs]);
+modifiers([psk3 | Rest], [Msg1, Msg2, {Dir, Tokens} | Msgs]) ->
+    Upd = {Dir, Tokens ++ [psk]},
+    modifiers(Rest, [Msg1, Msg2, Upd | Msgs]).
 
 %%
 
 -spec is_supported(protocol()) -> boolean().
-is_supported(#noise_protocol{hs_pattern = Pattern, dh = Dh, cipher = Cipher, hash = Hash}) ->
+is_supported(#noise_protocol{hs_pattern = Pattern, modifiers = Mods, dh = Dh, cipher = Cipher, hash = Hash}) ->
     Supported = supported(),
     lists:member(Pattern, maps:get(hs_pattern, Supported)) andalso
     lists:member(Cipher, maps:get(cipher, Supported)) andalso
     lists:member(Dh, maps:get(dh, Supported)) andalso
-    lists:member(Hash, maps:get(hash, Supported)).
+    lists:member(Hash, maps:get(hash, Supported)) andalso
+    sets:is_subset(sets:from_list(Mods), sets:from_list(maps:get(modifiers, Supported))).
 
 -spec supported() -> Result when
     Result :: #{
         hs_pattern := [noise_pattern()],
+        modifiers := [noise_modifier()],
         hash := [noise_hash()],
         cipher := [noise_cipher()],
         dh := [noise_dh()]
@@ -265,6 +290,7 @@ supported() ->
             xn, x1n, in, i1n, xk, x1k, xk1, x1k1, ik, i1k, ik1, i1k1, xx, xx1, x1x, x1x1,
             ix, i1x, ix1, i1x1, n, k, x
         ],
+        modifiers  => [psk0, psk1, psk2, psk3],
         hash       => [blake2b, blake2s, sha256, sha512],
         cipher     => ['ChaChaPoly', 'AESGCM'],
         dh         => [dh25519, dh448]
@@ -274,22 +300,26 @@ supported() ->
 
 -spec to_name(noise_pattern(), noise_dh(), noise_cipher(), noise_hash()) -> binary().
 to_name(Pattern, Dh, Cipher, Hash) ->
-    StrList = ["Noise", to_name_pattern(Pattern), to_name_dh(Dh),
+    to_name(Pattern, [], Dh, Cipher, Hash).
+
+-spec to_name(noise_pattern(), [noise_modifier()], noise_dh(), noise_cipher(), noise_hash()) -> binary().
+to_name(Pattern, Modifiers, Dh, Cipher, Hash) ->
+    StrList = ["Noise", to_name_pattern(Pattern, Modifiers), to_name_dh(Dh),
         to_name_cipher(Cipher), to_name_hash(Hash)],
     list_to_binary(lists:join("_", StrList)).
 
-to_name_pattern(Atom) ->
-    [Simple | Rest] = string:lexemes(atom_to_list(Atom), "_"),
-    string:uppercase(Simple) ++ Rest.
+-spec to_name_pattern(noise_pattern(), [noise_modifier()]) -> string().
+to_name_pattern(Pattern, Modifiers) ->
+    Simple = string:uppercase(atom_to_list(Pattern)),
+    Simple ++ lists:join("+", [atom_to_list(M) || M <- Modifiers]).
 
+-spec from_name_pattern(string()) -> {noise_pattern(), [noise_modifier()]}.
 from_name_pattern(String) ->
     SplitFun = fun(C) -> (C >= $A andalso C =< $Z) orelse (C >= $0 andalso C =< $9) end,
-    {Simple, Mod} = lists:splitwith(SplitFun, String),
-    list_to_atom(string:lowercase(Simple) ++
-        case Mod of
-            "" -> "";
-            _  -> [$_ | Mod]
-        end).
+    {Simple, Mods} = lists:splitwith(SplitFun, String),
+    Pattern = list_to_atom(string:lowercase(Simple)),
+    Modifiers = [list_to_atom(M) || M <- string:lexemes(Mods, "+")],
+    {Pattern, Modifiers}.
 
 to_name_dh(dh25519) -> "25519";
 to_name_dh(dh448)   -> "448".

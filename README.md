@@ -19,17 +19,18 @@ Features
 - interactive fundamental patterns
 - interactive deferred patterns
 - oneway patterns
+- modifiers psk0-3
 
-The fallback madifier and psk pattern are waiting to be implemented.
+The fallback madifier is waiting to be implemented.
 
-Interactive handshake
+Handshakes
 ---------------------
 
 When using `enoise` to do an interactive handshake, `enoise` will only take
 care of message composition/decomposition and encryption/decryption - i.e. the
 user has to do the actual sending and receiving.
 
-An example of the interactive handshake can be seen in the `noise_interactive`
+An example of the interactive handshake can be seen in the `test_handshake`
 test in `test/enoise_handshake_tests.erl`.
 
 Generic handshake
