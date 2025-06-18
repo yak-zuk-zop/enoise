@@ -39,3 +39,8 @@ protocol_setup() ->
 protocol_test(Name) ->
     NameConv = enoise_protocol:to_name(enoise_protocol:from_name(Name)),
     ?assertMatch(Name, binary_to_list(NameConv)).
+
+-spec unknown_protocol_test() -> _.
+unknown_protocol_test() ->
+    Name = "UnknownNoise_OO_HAHA128",
+    ?assertError({unsupported, {name, Name}}, enoise_protocol:from_name(Name)).
