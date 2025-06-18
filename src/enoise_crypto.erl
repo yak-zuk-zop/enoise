@@ -61,7 +61,7 @@ dh(Key1, Key2) ->
         {T, T} when T == dh448 ->
             crypto:compute_key(ecdh, PubKey2, SecKey1, x448);
         {T, T} ->
-            error({unsupported_diffie_hellman, T});
+            error({unsupported, {dh, T}});
         Wrong ->
             error({badarg, Wrong})
     end.
@@ -111,7 +111,7 @@ new_key_pair(dh448) ->
     {PK, SK} = crypto:generate_key(ecdh, x448),
     #{secret => SK, public => PK};
 new_key_pair(Type) ->
-    error({unsupported_key_type, Type}).
+    error({unsupported, {key_type, Type}}).
 
 %%
 
@@ -153,7 +153,7 @@ hash(sha256, Data) ->
 hash(sha512, Data) ->
     crypto:hash(sha512, Data);
 hash(Hash, _Data) ->
-    error({hash_unsupported, Hash}).
+    error({unsupported, {hash, Hash}}).
 
 -spec pad(binary(), non_neg_integer(), integer()) -> binary().
 pad(Data, MinSize, PadByte) ->

@@ -13,8 +13,8 @@
     from_name/1,
     hash/1,
     msgs/2,
-    pattern/1,
     pre_msgs/2,
+    pattern/1,
     supported/0,
     to_name/1
 ]).
@@ -87,7 +87,7 @@ to_name(Protocol) ->
             } = Protocol,
             to_name(Pattern, Mods, Dh, Cipher, Hash);
         false ->
-            error({protocol_not_recognized, Protocol})
+            error({unsupported, {protocol, Protocol}})
     end.
 
 -spec from_name(Name :: string() | binary()) -> protocol().
@@ -108,10 +108,10 @@ from_name(String) ->
                 true ->
                     Protocol;
                 false ->
-                    error({name_not_recognized, String})
+                    error({unsupported, {name, String}})
             end;
         _ ->
-            error({name_not_recognized, String})
+            error({unsupported, {name, String}})
     end.
 
 %%
@@ -167,7 +167,8 @@ role_adapt(responder, Msgs) ->
 
 %% patterns se & es differs from https://noiseprotocol.org/noise.html#handshake-patterns
 
--spec protocol(noise_pattern()) -> {list(PreMsg :: noise_msg()), list(noise_msg())}.
+-spec protocol(noise_pattern()) ->
+    {list(PreMsg :: noise_msg()), nonempty_list(Msg :: noise_msg())}.
 
 %% Interactive handshake patterns
 protocol(nn) ->
