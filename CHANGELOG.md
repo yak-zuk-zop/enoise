@@ -95,7 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hand shake messages).
 
 
-## [1.0] - 2018-10-09
+## [1.0.0] - 2018-10-09
 ### Added
 - Initial version the following map describe what is supported:
 ```
