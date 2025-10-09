@@ -18,6 +18,10 @@
     init_hs_test/2
 ]).
 
+-export_type([
+    cipher_data/0
+]).
+
 -spec test() -> _.
 
 -type protocol() :: enoise_protocol:protocol().
@@ -26,6 +30,14 @@
 -type init_data() :: #{e := keypair(), s := keypair(), rs := keypair(), prologue := binary()}.
 -type message() :: #{payload := binary(), ciphertext := binary()}.
 -type protocol_filter() :: fun((protocol()) -> boolean()).
+-type cipher_data() :: #{
+    key := binary(),
+    nonce := non_neg_integer(),
+    ad := binary(),
+    pt := binary(),
+    ct := binary(),
+    mac := binary()
+}.
 
 %% -- utils -------------------------------------------------------------------
 
@@ -80,7 +92,7 @@ maybe_new_keypair(DH, {public, Pub}) ->
 
 %% -- test data ---------------------------------------------------------------
 
--spec cipher_data(enoise_crypto:noise_cipher()) -> map().
+-spec cipher_data(enoise_crypto:noise_cipher()) -> cipher_data().
 cipher_data('ChaChaPoly') ->
     #{ key   => hex2bin("0x1c9240a5eb55d38af333888604f6b5f0473917c1402b80099dca5cbc207075c0")
      , nonce => 16#0807060504030201
