@@ -150,9 +150,12 @@ load_test_vectors(FName, FilterFun) ->
 
 %% -- internals ---------------------------------------------------------------
 
+json_object_push(Key, Value, Acc) ->
+    [{binary_to_atom(Key), Value} | Acc].
+
 parse_test_vectors(File) ->
     {ok, Bin} = file:read_file(File),
-    #{vectors := Vectors} = jsx:decode(Bin, [{labels, atom}, return_maps]),
+    {#{vectors := Vectors}, ok, <<>>} = json:decode(Bin, ok, #{object_push => fun json_object_push/3}),
     Vectors.
 
 %% Only test supported configurations
