@@ -45,6 +45,9 @@
 -type noise_key()    :: binary().
 -type keypair()      :: enoise_keypair:keypair().
 
+-type cipher_aead()  :: aes_256_gcm | chacha20_poly1305.
+-type edwards_curve_ed() :: x25519 | x448.
+
 %%-- API ----------------------------------------------------------------------
 
 %% @doc Perform a Diffie-Hellman calculation with the secret key from `Key1'
@@ -56,12 +59,8 @@ dh(Key1, Key2) ->
     SecKey1 = enoise_keypair:seckey(Key1),
     PubKey2 = enoise_keypair:pubkey(Key2),
     case {enoise_keypair:keytype(Key1), enoise_keypair:keytype(Key2)} of
-        {T, T} when T == dh25519 ->
-            enacl:curve25519_scalarmult(SecKey1, PubKey2);
-        {T, T} when T == dh448 ->
-            crypto:compute_key(ecdh, PubKey2, SecKey1, x448);
         {T, T} ->
-            error({unsupported, {dh, T}});
+            crypto:compute_key(ecdh, PubKey2, SecKey1, curve_ecdh(T));
         Wrong ->
             error({badarg, Wrong})
     end.
@@ -78,7 +77,6 @@ hmac(Hash, Key, Data) ->
     hash(Hash, <<Block2/binary, Hash1/binary>>).
 
 %% @doc HMAC key derivation function
-%% @end
 -spec hkdf(noise_hash(), noise_key(), binary()) -> [binary()].
 hkdf(Hash, Key, Data) ->
     TempKey = hmac(Hash, Key, Data),
@@ -95,23 +93,15 @@ rekey(Cipher, K0) ->
 
 %% @doc Restore public key from a secret
 -spec pubkey_from_secret(noise_dh(), noise_key()) -> noise_key().
-pubkey_from_secret(dh25519, Secret) ->
-    enacl:curve25519_scalarmult_base(Secret);
-pubkey_from_secret(dh448, Secret) ->
-    {PK, _SK} = crypto:generate_key(ecdh, x448, Secret),
+pubkey_from_secret(Curve, Secret) ->
+    {PK, _SK} = crypto:generate_key(ecdh, curve_ecdh(Curve), Secret),
     PK.
 
 %% @doc Generate new key pair
 -spec new_key_pair(noise_dh()) -> #{public := noise_key(), secret := noise_key()}.
-new_key_pair(dh25519) ->
-    #{public := PK, secret := SK} = enacl:crypto_sign_ed25519_keypair(),
-    #{secret => enacl:crypto_sign_ed25519_secret_to_curve25519(SK),
-     public => enacl:crypto_sign_ed25519_public_to_curve25519(PK)};
-new_key_pair(dh448) ->
-    {PK, SK} = crypto:generate_key(ecdh, x448),
-    #{secret => SK, public => PK};
-new_key_pair(Type) ->
-    error({unsupported, {key_type, Type}}).
+new_key_pair(Curve) ->
+    {PK, SK} = crypto:generate_key(ecdh, curve_ecdh(Curve)),
+    #{public => PK, secret => SK}.
 
 %%
 
@@ -119,7 +109,10 @@ new_key_pair(Type) ->
     binary().
 encrypt('ChaChaPoly', K, N, Ad, PlainText) ->
     Nonce = <<0:32, N:64/little-unsigned-integer>>,
-    enacl:aead_chacha20poly1305_ietf_encrypt(PlainText, Ad, Nonce, K);
+    {CipherText, CipherTag} = crypto:crypto_one_time_aead(
+        chacha20_poly1305, K, Nonce, PlainText, Ad, true
+    ),
+    <<CipherText/binary, CipherTag/binary>>;
 encrypt('AESGCM', K, N, Ad, PlainText) ->
     Nonce = <<0:32, N:64>>,
     {CipherText, CipherTag} = crypto:crypto_one_time_aead(
@@ -131,27 +124,16 @@ encrypt('AESGCM', K, N, Ad, PlainText) ->
     binary() | {error, term()}.
 decrypt('ChaChaPoly', K, N, Ad, CipherText) ->
     Nonce = <<0:32, N:64/little-unsigned-integer>>,
-    enacl:aead_chacha20poly1305_ietf_decrypt(CipherText, Ad, Nonce, K);
-decrypt('AESGCM', K, N, Ad, CipherText0) ->
-    CTLen = byte_size(CipherText0) - ?MAC_LEN,
-    <<CipherText:CTLen/binary, MAC:?MAC_LEN/binary>> = CipherText0,
+    decrypt_crypto(chacha20_poly1305, K, Nonce, CipherText, Ad);
+decrypt('AESGCM', K, N, Ad, CipherText) ->
     Nonce = <<0:32, N:64>>,
-    case crypto:crypto_one_time_aead(aes_256_gcm, K, Nonce, CipherText, Ad, MAC, false) of
-        error -> {error, decrypt_failed};
-        Data  -> Data
-    end.
+    decrypt_crypto(aes_256_gcm, K, Nonce, CipherText, Ad).
 
 %%
 
 -spec hash(noise_hash(), binary()) -> binary().
-hash(blake2b, Data) ->
-    enacl:generichash(64, Data);
-hash(blake2s, Data) ->
-    crypto:hash(blake2s, Data);
-hash(sha256, Data) ->
-    crypto:hash(sha256, Data);
-hash(sha512, Data) ->
-    crypto:hash(sha512, Data);
+hash(H, Data) when H == blake2b; H == blake2s; H == sha256; H == sha512 ->
+    crypto:hash(H, Data);
 hash(Hash, _Data) ->
     error({unsupported, {hash, Hash}}).
 
@@ -192,3 +174,22 @@ hmac_format_key(Hash, Key0, Pad, BLen) ->
     Key2 = pad(Key1, BLen, 16#00),
     PadWord = (Pad bsl 24) bor (Pad bsl 16) bor (Pad bsl 8) bor Pad,
     << <<(Word bxor PadWord):32>> || <<Word:32>> <= Key2 >>.
+
+-spec curve_ecdh(noise_dh()) -> edwards_curve_ed().
+curve_ecdh(dh25519) -> x25519;
+curve_ecdh(dh448) -> x448;
+curve_ecdh(T) -> error({unsupported, {dh, T}}).
+
+-spec decrypt_crypto(Cipher, K, Nonce, CipherText0, Ad) -> binary() | {error, term()} when
+    Cipher :: cipher_aead(),
+    K :: noise_key(),
+    Nonce :: binary(),
+    CipherText0 :: binary(),
+    Ad :: binary().
+decrypt_crypto(Cipher, K, Nonce, CipherText0, Ad) ->
+    CTLen = byte_size(CipherText0) - ?MAC_LEN,
+    <<CipherText:CTLen/binary, MAC:?MAC_LEN/binary>> = CipherText0,
+    case crypto:crypto_one_time_aead(Cipher, K, Nonce, CipherText, Ad, MAC, false) of
+        error -> {error, decrypt_failed};
+        Data  -> Data
+    end.
