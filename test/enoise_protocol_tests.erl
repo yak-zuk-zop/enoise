@@ -4,21 +4,24 @@
 
 -spec test() -> _.
 
--type protocol_name() :: string().
-
-%%-- fixtures -----------------------------------------------------------------
+%%-- tests --------------------------------------------------------------------
 
 -spec protocol_test_() -> _.
 protocol_test_() ->
-    {setup,
-        fun protocol_setup/0,
-        fun (Tests) ->
-            TestCases = [fun protocol_test/1],
-            [{T, {with, T, TestCases}} || T <- Tests]
-        end
-    }.
+    [
+        {"unknown_protocol", fun() ->
+            Name = "UnknownNoise_OO_HAHA128",
+            ?assertError({unsupported, {name, Name}}, enoise_protocol:from_name(Name))
+        end} | [
+        {Name, fun() ->
+            NameConv = enoise_protocol:to_name(enoise_protocol:from_name(Name)),
+            ?assertMatch(Name, binary_to_list(NameConv))
+        end} || Name <- protocol_setup()
+    ]].
 
--spec protocol_setup() -> [protocol_name()].
+%%-- fixtures -----------------------------------------------------------------
+
+-spec protocol_setup() -> [ProtocolName :: string()].
 protocol_setup() ->
     [
         %% oneway
@@ -32,15 +35,3 @@ protocol_setup() ->
         %% psk
         "Noise_NNpsk0_25519_AESGCM_BLAKE2b"
     ].
-
-%%-- tests --------------------------------------------------------------------
-
--spec protocol_test(protocol_name()) -> _.
-protocol_test(Name) ->
-    NameConv = enoise_protocol:to_name(enoise_protocol:from_name(Name)),
-    ?assertMatch(Name, binary_to_list(NameConv)).
-
--spec unknown_protocol_test() -> _.
-unknown_protocol_test() ->
-    Name = "UnknownNoise_OO_HAHA128",
-    ?assertError({unsupported, {name, Name}}, enoise_protocol:from_name(Name)).

@@ -28,45 +28,48 @@ hash_test_() ->
             Hashs = maps:get(hash, enoise_protocol:supported()),
             lists:flatten([[{H, Data} || Data <- hash_data(H)] || H <- Hashs])
         end,
-        fun (Hashs) ->
-            [fun () -> hash_test_int(H, Data) end || {H, Data} <- Hashs]
-        end
+        fun (Hashs) -> [
+            ?_assertMatch(Out, enoise_crypto:hash(H, In)) ||
+                {H, #{input := In, output := Out}} <- Hashs
+        ] end
     }.
 
 %%
 
--spec chachapoly_test() -> _.
-chachapoly_test() ->
-    cipher_test_int('ChaChaPoly').
+-spec cipher_test_() -> _.
+cipher_test_() ->
+    Ciphers = maps:get(cipher, enoise_protocol:supported()),
+    Inits = lists:flatten([
+        [{C, Data} || Data <- test_utils:cipher_data(C)] || C <- Ciphers
+    ]),
+    [
+        {"encrypt/decrypt", [
+            fun () -> enc_dec_test_int(C, Data) end
+                || {C, Data} <- Inits
+        ]},
+        {"rekey", [
+            fun () -> rekey_test_int(C, Data) end
+                || {C, Data} <- Inits
+        ]}
+    ].
 
--spec aes_gcm_test() -> _.
-aes_gcm_test() ->
-    cipher_test_int('AESGCM').
+-spec blake2b_hmac_test_() -> _.
+blake2b_hmac_test_() ->
+    Hash = blake2b,
+    [
+        ?_assertMatch(HMAC, enoise_crypto:hmac(Hash, Key, Data))
+        || #{key := Key, data := Data, hmac := HMAC} <- hmac_data(Hash)
+    ].
 
--spec blake2b_hmac_test() -> _.
-blake2b_hmac_test() ->
-    hmac_test_int(blake2b).
-
--spec blake2b_hkdf_test() -> _.
-blake2b_hkdf_test() ->
-    hkdf_test_int(blake2b).
+-spec blake2b_hkdf_test_() -> _.
+blake2b_hkdf_test_() ->
+    Hash = blake2b,
+    [
+        ?_assertMatch([Out1, Out2, _], enoise_crypto:hkdf(Hash, Key, Data))
+        || #{key := Key, data := Data, out1 := Out1, out2 := Out2} <- hkdf_data(Hash)
+    ].
 
 %%-- internals ----------------------------------------------------------------
-
-hash_test_int(Hash, #{input := In, output := Out}) ->
-    ?assertMatch(Out, enoise_crypto:hash(Hash, In)).
-
-hmac_test_int(Hash) ->
-    Test = fun(#{key := Key, data := Data, hmac := HMAC}) ->
-        ?assertMatch(HMAC, enoise_crypto:hmac(Hash, Key, Data))
-    end,
-    lists:foreach(Test, hmac_data(Hash)).
-
-hkdf_test_int(Hash) ->
-    Test = fun(#{key := Key, data := Data, out1 := Out1, out2 := Out2}) ->
-        ?assertMatch([Out1, Out2, _], enoise_crypto:hkdf(Hash, Key, Data))
-    end,
-    lists:foreach(Test, hkdf_data(Hash)).
 
 dh_test_int({dynamic, DH}) ->
     KeyPair1 = enoise_keypair:new(DH),
@@ -81,36 +84,26 @@ dh_test_int({static, DH}) ->
     ?assertMatch(Shared, enoise_crypto:dh(AKeyPair, BKeyPair)),
     ?assertMatch(Shared, enoise_crypto:dh(BKeyPair, AKeyPair)).
 
-cipher_test_int(Cipher) ->
-    #{key := Key, nonce := Nonce, ad := AD, mac := MAC,
-       pt := PlainText, ct := CipherText} = test_utils:cipher_data(Cipher),
-    PTLen  = byte_size(PlainText),
+-spec enc_dec_test_int(enoise_crypto:noise_cipher(), test_utils:cipher_data()) -> _.
+enc_dec_test_int(Cipher, Data) ->
+    #{key := Key, nonce := Nonce, ad := AD, mac := MAC, pt := PlainText, ct := CipherText} = Data,
     CTLen  = byte_size(CipherText),
-    MACLen = byte_size(MAC),
+    CipherTextAndMAC = <<CipherText/binary, MAC/binary>>,
 
-    %% Sanity check
-    ?assert(PTLen == CTLen),
-
-    <<CipherText0:CTLen/binary, MAC0:MACLen/binary>> =
+    <<CipherText0:CTLen/binary, MAC0/binary>> =
         enoise_crypto:encrypt(Cipher, Key, Nonce, AD, PlainText),
+    PlainText0 = enoise_crypto:decrypt(Cipher, Key, Nonce, AD, CipherTextAndMAC),
 
-    ?assertMatch(CipherText, CipherText0),
     ?assertMatch(MAC, MAC0),
+    ?assertMatch(CipherText, CipherText0),
+    ?assertMatch(PlainText, PlainText0).
 
-    <<PlainText0:PTLen/binary>> = enoise_crypto:decrypt(
-        Cipher, Key, Nonce, AD, <<CipherText/binary, MAC/binary>>
-    ),
-
-    ?assertMatch(PlainText, PlainText0),
-
-    % rekey test
+-spec rekey_test_int(enoise_crypto:noise_cipher(), test_utils:cipher_data()) -> _.
+rekey_test_int(Cipher, #{key := Key, nonce := Nonce, ad := AD, pt := PlainText}) ->
     Key1 = enoise_crypto:rekey(Cipher, Key),
-    <<CipherText1:CTLen/binary, MAC1:MACLen/binary>> =
-        enoise_crypto:encrypt(Cipher, Key1, Nonce, AD, PlainText),
-    <<PlainText1:PTLen/binary>> =
-        enoise_crypto:decrypt(Cipher, Key1, Nonce, AD, <<CipherText1/binary, MAC1/binary>>),
-    ?assertMatch(PlainText, PlainText1),
-    ok.
+    Encrypted = enoise_crypto:encrypt(Cipher, Key1, Nonce, AD, PlainText),
+    Decrypted = enoise_crypto:decrypt(Cipher, Key1, Nonce, AD, Encrypted),
+    ?assertMatch(PlainText, Decrypted).
 
 %%-- fixtures -----------------------------------------------------------------
 

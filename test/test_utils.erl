@@ -1,5 +1,4 @@
 -module(test_utils).
--include_lib("eunit/include/eunit.hrl").
 
 %% utils
 -export([
@@ -21,8 +20,6 @@
 -export_type([
     cipher_data/0
 ]).
-
--spec test() -> _.
 
 -type protocol() :: enoise_protocol:protocol().
 -type keypair() :: enoise_keypair:keypair().
@@ -92,12 +89,14 @@ maybe_new_keypair(DH, {public, Pub}) ->
 
 %% -- test data ---------------------------------------------------------------
 
--spec cipher_data(enoise_crypto:noise_cipher()) -> cipher_data().
+-spec cipher_data(enoise_crypto:noise_cipher()) -> [cipher_data()].
 cipher_data('ChaChaPoly') ->
-    #{ key   => hex2bin("0x1c9240a5eb55d38af333888604f6b5f0473917c1402b80099dca5cbc207075c0")
-     , nonce => 16#0807060504030201
-     , ad    => hex2bin("0xf33388860000000000004e91")
-     , pt    => hex2bin(
+    [#{
+        key   => hex2bin("0x1c9240a5eb55d38af333888604f6b5f0473917c1402b80099dca5cbc207075c0"),
+        nonce => 16#0807060504030201,
+        ad    => hex2bin("0xf33388860000000000004e91"),
+        mac   => hex2bin("0xeead9d67890cbb22392336fea1851f38"),
+        pt    => hex2bin(
             "0x496e7465726e65742d4472616674732061726520647261667420646f63756d65"
             "6e74732076616c696420666f722061206d6178696d756d206f6620736978206d"
             "6f6e74687320616e64206d617920626520757064617465642c207265706c6163"
@@ -106,8 +105,8 @@ cipher_data('ChaChaPoly') ->
             "6961746520746f2075736520496e7465726e65742d4472616674732061732072"
             "65666572656e6365206d6174657269616c206f7220746f206369746520746865"
             "6d206f74686572207468616e206173202fe2809c776f726b20696e2070726f67"
-            "726573732e2fe2809d")
-     , ct    => hex2bin(
+            "726573732e2fe2809d"),
+        ct    => hex2bin(
             "0x64a0861575861af460f062c79be643bd5e805cfd345cf389f108670ac76c8cb2"
             "4c6cfc18755d43eea09ee94e382d26b0bdb7b73c321b0100d4f03b7f355894cf"
             "332f830e710b97ce98c8a84abd0b948114ad176e008d33bd60f982b1ff37c855"
@@ -117,26 +116,24 @@ cipher_data('ChaChaPoly') ->
             "0bb2316053fa76991955ebd63159434ecebb4e466dae5a1073a6727627097a10"
             "49e617d91d361094fa68f0ff77987130305beaba2eda04df997b714d6c6f2c29"
             "a6ad5cb4022b02709b")
-     , mac   => hex2bin("0xeead9d67890cbb22392336fea1851f38")
-    };
+    }];
 cipher_data('AESGCM') ->
-    #{ key   => <<0:256>>
-     , nonce => 16#00
-     , ad    => <<>>
-     , pt    => <<>>
-     , ct    => <<>>
-     , mac   => hex2bin("0x530f8afbc74536b9a963b4f1c4cb738b")
-    }.
-
-% apply l8r
-%cipher_data('AESGCM') ->
-%    #{ key   => <<0:256>>
-%     , nonce => 0,
-%     , ad    => <<>>,
-%     , pt    => <<0:128>>
-%     , ct    => hex2bin("0xcea7403d4d606b6e074ec5d3baf39d18")
-%     , mac   => hex2bin("0xd0d1c8a799996bf0265b98b5d48ab919")
-%    }.
+    [#{
+        key   => <<0:256>>,
+        nonce => 16#00,
+        ad    => <<>>,
+        pt    => <<>>,
+        ct    => <<>>,
+        mac   => hex2bin("0x530f8afbc74536b9a963b4f1c4cb738b")
+    },
+    #{
+        key   => <<0:256>>,
+        nonce => 0,
+        ad    => <<>>,
+        pt    => <<0:128>>,
+        ct    => hex2bin("0xcea7403d4d606b6e074ec5d3baf39d18"),
+        mac   => hex2bin("0xd0d1c8a799996bf0265b98b5d48ab919")
+    }].
 
 %%
 
@@ -155,7 +152,8 @@ json_object_push(Key, Value, Acc) ->
 
 parse_test_vectors(File) ->
     {ok, Bin} = file:read_file(File),
-    {#{vectors := Vectors}, ok, <<>>} = json:decode(Bin, ok, #{object_push => fun json_object_push/3}),
+    Decoders = #{object_push => fun json_object_push/3},
+    {#{vectors := Vectors}, ok, <<>>} = json:decode(Bin, ok, Decoders),
     Vectors.
 
 %% Only test supported configurations
