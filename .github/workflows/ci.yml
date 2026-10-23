@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ "master" ]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    container:
+      image: erlang:27-alpine
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: apk add --no-cache make
+
+      - name: Cache rebar3 dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/rebar3
+            _build
+          key: ${{ runner.os }}-rebar3-${{ hashFiles('rebar.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-rebar3-
+
+      - name: Run make xref
+        run: make xref
+
+      - name: Run make dialyzer
+        run: make dialyzer
+
+      - name: Run make lint
+        run: make lint
+
+      - name: Run make tests
+        run: make tests

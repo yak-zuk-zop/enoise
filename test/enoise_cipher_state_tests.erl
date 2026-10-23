@@ -4,44 +4,63 @@
 
 -spec test() -> _.
 
+-import(enoise_cipher_state, [
+    encrypt_with_ad/3,
+    decrypt_with_ad/3
+]).
+
+-import(test_utils, [
+    cipher_data/1
+]).
+
+-type cipher() :: enoise_crypto:noise_cipher().
+-type test_data() :: test_utils:cipher_data().
+-type cipher_state() :: enoise_cipher_state:state().
+
 %%-- tests --------------------------------------------------------------------
 
--spec chachapoly_test() -> _.
-chachapoly_test() ->
-    cipher_test_int('ChaChaPoly').
-
--spec aes_gcm_test() -> _.
-aes_gcm_test() ->
-    cipher_test_int('AESGCM').
+-spec cipher_test_() -> _.
+cipher_test_() ->
+    Ciphers = maps:get(cipher, enoise_protocol:supported()),
+    Inits = lists:flatten([
+        [{init_cipher_state(C, Data), Data} || Data <- cipher_data(C)] || C <- Ciphers
+    ]),
+    [
+        {"encrypt/decrypt", [
+            fun() -> enc_dec_test_int(CS, Data) end
+                || {CS, Data} <- Inits
+        ]},
+        {"rekey", [
+            fun() -> rekey_test_int(CS, Data) end
+                || {CS, Data} <- Inits
+        ]}
+    ].
 
 %%-- internals ----------------------------------------------------------------
 
-cipher_test_int(Cipher) ->
-    #{key := Key, nonce := Nonce, ad := AD, mac := MAC,
-      pt := PlainText, ct := CipherText} = test_utils:cipher_data(Cipher),
-    PTLen  = byte_size(PlainText),
-    CTLen  = byte_size(CipherText),
-    MACLen = byte_size(MAC),
+-spec init_cipher_state(cipher(), test_data()) -> cipher_state().
+init_cipher_state(Cipher, #{key := Key, nonce := Nonce}) ->
+    CS = enoise_cipher_state:init(Key, Cipher),
+    enoise_cipher_state:set_nonce(CS, Nonce).
 
-    CS0 = enoise_cipher_state:init(Key, Cipher),
-    CS1 = enoise_cipher_state:set_nonce(CS0, Nonce),
+-spec enc_dec_test_int(cipher_state(), test_data()) -> _.
+enc_dec_test_int(CS, #{ad := AD, mac := MAC, pt := PlainText, ct := CipherText}) ->
+    CTLen = byte_size(CipherText),
+    CipherTextAndMAC = <<CipherText/binary, MAC/binary>>,
 
-    {ok, _CS2, <<CipherText0:CTLen/binary, MAC0:MACLen/binary>>} =
-        enoise_cipher_state:encrypt_with_ad(CS1, AD, PlainText),
+    {ok, _CS1, Encrypted} = encrypt_with_ad(CS, AD, PlainText),
+    {ok, _CS2, Decrypted} = decrypt_with_ad(CS, AD, CipherTextAndMAC),
 
-    ?assertMatch(CipherText, CipherText0),
+    <<CipherText1:CTLen/binary, MAC0/binary>> = Encrypted,
     ?assertMatch(MAC, MAC0),
+    ?assertMatch(CipherText, CipherText1),
+    ?assertMatch(PlainText, Decrypted).
 
-    {ok, _CS3, <<PlainText0:PTLen/binary>>} =
-        enoise_cipher_state:decrypt_with_ad(CS1, AD, <<CipherText/binary, MAC/binary>>),
+-spec rekey_test_int(cipher_state(), test_data()) -> _.
+rekey_test_int(CS0, #{ad := AD, pt := PlainText}) ->
+    CS = enoise_cipher_state:rekey(CS0),
 
-    ?assertMatch(PlainText, PlainText0),
+    {ok, _CS1, Encrypted} = encrypt_with_ad(CS, AD, PlainText),
+    {ok, _CS2, Decrypted} = decrypt_with_ad(CS, AD, Encrypted),
 
-    % rekey test
-    CS4 = enoise_cipher_state:rekey(CS1),
-    {ok, _CS5, <<CipherText1:CTLen/binary, MAC1:MACLen/binary>>} =
-        enoise_cipher_state:encrypt_with_ad(CS4, AD, PlainText),
-    {ok, _CS6, <<PlainText1:PTLen/binary>>} =
-        enoise_cipher_state:decrypt_with_ad(CS4, AD, <<CipherText1/binary, MAC1/binary>>),
-    ?assertMatch(PlainText, PlainText1),
-    ok.
+    ?assertMatch(PlainText, Decrypted).

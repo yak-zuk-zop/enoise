@@ -6,6 +6,8 @@
 
 -spec test() -> _.
 
+%%-- tests --------------------------------------------------------------------
+
 -spec sym_state_test() -> _.
 sym_state_test() ->
     Name = <<"Noise_XK_25519_ChaChaPoly_BLAKE2b">>,

@@ -14,17 +14,17 @@ Features
 `enoise` aims to support noise protocol rev.34
 
 - cipher: ChaChaPoly, AESGCM
-- dh: 25519, 448
+- ecdh: x25519, x448
 - hash: sha2-256, sha2-512, blake2s, blake2b
 - interactive fundamental patterns
 - interactive deferred patterns
 - oneway patterns
 - modifiers psk0-3
 
-The fallback madifier is waiting to be implemented.
+The fallback modifier is waiting to be implemented.
 
 Handshakes
----------------------
+----------
 
 When using `enoise` to do an interactive handshake, `enoise` will only take
 care of message composition/decomposition and encryption/decryption - i.e. the

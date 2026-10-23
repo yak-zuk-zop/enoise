@@ -8,7 +8,7 @@
     noise_monitor_test/0
 ]}).
 
-%%-- fixtures -----------------------------------------------------------------
+%%-- tests --------------------------------------------------------------------
 
 -spec vectors_test_() -> _.
 vectors_test_() ->
@@ -20,38 +20,14 @@ vectors_test_() ->
         end
     }.
 
--spec noise_dh25519_test_() -> _.
-noise_dh25519_test_() ->
-    setup_dh_test(dh25519).
-
--spec noise_dh448_test_() -> _.
-noise_dh448_test_() ->
-    setup_dh_test(dh448).
-
-%%
-
-setup_dh_test(DH) ->
-    {setup,
-        fun() -> setup_dh(DH) end,
-        fun({Tests, SrvKP, CliKP}) ->
-            [{T, fun() -> noise_test_simple(T, SrvKP, CliKP) end} || T <- Tests]
-        end
-    }.
-
--spec setup_dh(enoise_crypto:noise_dh()) -> {[Protocol], SrvKP, CliKP} when
-    Protocol :: binary(),
-    SrvKP :: enoise_keypair:keypair(),
-    CliKP :: enoise_keypair:keypair().
-setup_dh(DH) ->
-    %% Generate a static key-pair for Client and Server
-    SrvKeyPair = enoise_keypair:new(DH),
-    CliKeyPair = enoise_keypair:new(DH),
-
-    #{hs_pattern := Ps, hash := Hs, cipher := Cs} = enoise_protocol:supported(),
-    Protocols = [enoise_protocol:to_name(P, DH, C, H) || P <- Ps, C <- Cs, H <- Hs],
-    {Protocols, SrvKeyPair, CliKeyPair}.
-
-%%-- tests --------------------------------------------------------------------
+-spec dh_test_() -> _.
+dh_test_() ->
+    DHs = maps:get(dh, enoise_protocol:supported()),
+    Setup = [setup_dh(DH) || DH <- DHs],
+    [[
+        {Name, fun() -> noise_test_simple(Name, SrvKP, CliKP) end} || Name <- Protocols]
+            || {Protocols, SrvKP, CliKP} <- Setup
+    ].
 
 -spec noise_monitor_test() -> _.
 noise_monitor_test() ->
@@ -103,6 +79,21 @@ bad_handshake_test() ->
     gen_tcp:close(Sock),
 
     ?assertMatch({error, {bad_data, _}}, SrvRes).
+
+%%-- internals ----------------------------------------------------------------
+
+-spec setup_dh(enoise_crypto:noise_dh()) -> {[Protocol], SrvKP, CliKP} when
+    Protocol :: binary(),
+    SrvKP :: enoise_keypair:keypair(),
+    CliKP :: enoise_keypair:keypair().
+setup_dh(DH) ->
+    %% Generate a static key-pair for Client and Server
+    SrvKeyPair = enoise_keypair:new(DH),
+    CliKeyPair = enoise_keypair:new(DH),
+
+    #{hs_pattern := Ps, hash := Hs, cipher := Cs} = enoise_protocol:supported(),
+    Protocols = [enoise_protocol:to_name(P, DH, C, H) || P <- Ps, C <- Cs, H <- Hs],
+    {Protocols, SrvKeyPair, CliKeyPair}.
 
 %%
 

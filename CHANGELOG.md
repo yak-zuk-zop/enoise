@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-10-23
+
+### Changed
+- replaced enacl with crypto
+- replaced jsx with built-in json decoder
+- improved tests
+
 ## [2.1.0] - 2025-04-23
 
 ### Added
@@ -95,7 +102,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hand shake messages).
 
 
-## [1.0] - 2018-10-09
+## [1.0.0] - 2018-10-09
 ### Added
 - Initial version the following map describe what is supported:
 ```
@@ -105,6 +112,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  , dh         => [dh25519] }
 ```
 
+[2.2.0]: https://github.com/yak-zuk-zop/enoise/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/yak-zuk-zop/enoise/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/yak-zuk-zop/enoise/compare/v1.4.0...v2.0.0
 [1.4.0]: https://github.com/yak-zuk-zop/enoise/compare/v1.3.0...v1.4.0
